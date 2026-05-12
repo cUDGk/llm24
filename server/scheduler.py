@@ -186,31 +186,48 @@ async def _pick_from_charts(settings: dict, active_mail: dict | None) -> dict | 
 
 
 async def _resolve_mail_track(mail: dict) -> dict | None:
-    """お便りのrequest欄から Spotify track URL/URI を解釈してトラックメタを返す。"""
+    """お便りのrequest欄が Spotify track URL/URI ならメタ解決。
+    /tracks/{id} は新規アプリで403になるため、oEmbed (認証不要) でタイトル/サムネ取得。
+    duration_ms は取れないので 0 を返し、フロントが player state から取得する。
+    """
     if not mail or not mail.get("request"):
         return None
     track_id = spotify.parse_track_id(mail["request"])
     if not track_id:
         return None
-    # /tracks/{id} は新規アプリでは 403 になるので、Search で同じURIを探してメタを取る
-    try:
-        candidates = await spotify.search_by_track_query(
-            f"{mail.get('body','')} {mail.get('radio_name','')}", limit=10
-        )
-    except spotify.SpotifyError:
-        candidates = []
-    for c in candidates:
-        if c["id"] == track_id:
-            return c
-    # 見つからなくても再生だけは可能
+
+    artist = "(リクエスト)"
+    title = "(リクエスト曲)"
+    album_image = None
+    duration_ms = 0
+
+    # 1. oEmbed で曲名とサムネを取得 (認証不要)
+    meta = await spotify.get_track_oembed(track_id)
+    if meta:
+        title = (meta.get("title") or "").strip() or title
+        album_image = meta.get("thumbnail_url") or None
+
+    # 2. Search でアーティストと duration を解決 (oEmbedの曲名で逆引き)
+    if title and title != "(リクエスト曲)":
+        try:
+            results = await spotify.search_by_track_query(title, limit=10)
+            for r in results:
+                if r["id"] == track_id:
+                    artist = r["artist"] or artist
+                    duration_ms = r.get("duration_ms") or 0
+                    album_image = album_image or r.get("album_image")
+                    break
+        except spotify.SpotifyError:
+            pass
+
     return {
         "id": track_id,
         "uri": f"spotify:track:{track_id}",
-        "artist": "(requested)",
-        "title": "(requested)",
-        "duration_ms": 0,  # フロントが player state で監視
+        "artist": artist,
+        "title": title,
+        "duration_ms": duration_ms,
         "popularity": None,
-        "album_image": None,
+        "album_image": album_image,
     }
 
 

@@ -64,7 +64,7 @@ const UI = {
 
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", UI.theme);
-  $("btn-theme").textContent = UI.theme.toUpperCase();
+  $("btn-theme").textContent = UI.theme === "dark" ? "ダーク" : "ライト";
 }
 
 // ----- token
@@ -147,7 +147,7 @@ async function startOnAir() {
     return;
   }
   if (!ST.deviceId) {
-    alert("Spotify device not ready yet. Wait a moment and press START again.");
+    alert("Spotifyデバイス未準備。少し待ってからもう一度押してください。");
     return;
   }
   if (!ST.audioCtx) {
@@ -158,7 +158,7 @@ async function startOnAir() {
   const r = await fetch("/api/onair", { method: "POST" });
   if (!r.ok) {
     const msg = await r.text();
-    alert("ON AIR failed: " + msg);
+    alert("オンエア開始失敗: " + msg);
     return;
   }
   ST.onAir = true;
@@ -201,31 +201,70 @@ async function loop() {
     return;
   }
   ST.loopRunning = true;
+  ST.nextSegmentPromise = null;
   try {
     while (ST.onAir) {
       try {
-        showLoading(true);
-        const r = await fetch("/api/next-segment");
+        // 既にプリフェッチ済みなら即取得、なければここで fetch
+        if (!ST.nextSegmentPromise) {
+          showLoading(true);
+          ST.nextSegmentPromise = fetchNextSegment();
+        }
+        const seg = await ST.nextSegmentPromise;
+        ST.nextSegmentPromise = null;
         showLoading(false);
-        if (r.status === 409) {
-          console.warn("[loop] server reports not on-air → stopping client loop");
+
+        if (seg === "stopped") {
           ST.onAir = false;
           break;
         }
-        if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
-        const seg = await r.json();
+        if (!seg) {
+          throw new Error("segment fetch failed");
+        }
+
+        // 曲が含まれるセグメントなら、再生中に次の segment を先取りする
+        const hasSong = (seg.steps || []).some((s) => s && s.type === "song");
+        if (hasSong) {
+          // 曲開始直後 (15秒後を目安) に次セグメントを取りに行く → 曲が鳴ってる間に準備完了
+          setTimeout(() => {
+            if (ST.onAir && !ST.nextSegmentPromise) {
+              ST.nextSegmentPromise = fetchNextSegment();
+            }
+          }, 15000);
+        }
+
         await playSegment(seg);
       } catch (e) {
         showLoading(false);
+        ST.nextSegmentPromise = null;
         console.error("[loop] segment error:", e);
-        $("np-state").textContent = "error (retry in 3s)";
+        $("np-state").textContent = "エラー (3秒後に再試行)";
         for (let i = 0; i < 15 && ST.onAir; i++) await sleep(200);
       }
     }
   } finally {
     ST.loopRunning = false;
+    ST.nextSegmentPromise = null;
     showLoading(false);
     console.log("[loop] exited");
+  }
+}
+
+async function fetchNextSegment() {
+  try {
+    const r = await fetch("/api/next-segment");
+    if (r.status === 409) {
+      console.warn("[loop] server says not on-air");
+      return "stopped";
+    }
+    if (!r.ok) {
+      console.warn("[loop] next-segment HTTP", r.status, await r.text());
+      return null;
+    }
+    return await r.json();
+  } catch (e) {
+    console.warn("[loop] fetchNextSegment threw", e);
+    return null;
   }
 }
 
@@ -372,38 +411,50 @@ async function startSpotifyPlay(uri) {
 }
 
 function waitSongEnd(durationMs) {
-  // Spotify Player state を使って実際の再生進捗を監視する。
-  // duration_ms が 0 (リクエストURL直指定の場合) でも player state.duration から取得。
+  // Spotify Player state + 壁時計の両軸監視で、どのケースでも必ず抜ける。
   return new Promise(async (resolve) => {
     const startWall = Date.now();
+    let knownDuration = durationMs || 0;
     let lastPos = -1;
     let lastChangeAt = Date.now();
-    let knownDuration = durationMs || 0;
+    let initialPosSeen = false;
+    let stateMissCount = 0;
 
-    const finish = () => {
-      updateProgress(0, 0);
-      resolve();
-    };
+    const finish = () => { updateProgress(0, 0); resolve(); };
 
     while (ST.onAir) {
+      const elapsed = Date.now() - startWall;
       let state = null;
       try { state = await ST.player.getCurrentState(); } catch {}
+
       if (state && typeof state.duration === "number" && state.duration > 0) {
+        stateMissCount = 0;
         knownDuration = state.duration;
+        if (!initialPosSeen && state.position > 200) initialPosSeen = true;
         if (state.position !== lastPos) {
           lastPos = state.position;
           lastChangeAt = Date.now();
         }
         updateProgress(state.position, state.duration);
-        if (state.position >= state.duration - 400) return finish();
-        // 一時停止が長すぎる場合は終了扱い
-        if (state.paused && Date.now() - lastChangeAt > 5000 && state.position > 1000) return finish();
+
+        // (a) position が duration 終端へ到達
+        if (state.position >= state.duration - 500) return finish();
+        // (b) 壁時計で duration を 2秒以上超過 (SDK遅延セーフティ)
+        if (elapsed > state.duration + 2000) return finish();
+        // (c) 一度再生開始した後、position=0 で paused になる = 曲終了直後
+        if (initialPosSeen && state.paused && state.position === 0 && Date.now() - lastChangeAt > 2500) return finish();
+        // (d) 一時停止が長過ぎる場合も終了扱い
+        if (state.paused && state.position > 1000 && Date.now() - lastChangeAt > 6000) return finish();
       } else {
-        // SDKがstateを返せない時は壁時計フォールバック
-        const elapsed = Date.now() - startWall;
+        // state が取れない (SDK 一時的応答なし or 想定外停止)
+        stateMissCount += 1;
         updateProgress(elapsed, knownDuration);
+        // duration 既知なら壁時計で判定
         if (knownDuration > 0 && elapsed >= knownDuration - 400) return finish();
-        if (knownDuration === 0 && elapsed > 6 * 60 * 1000) return finish(); // 6分でも来なきゃ強制
+        // duration 不明で 6分超 → 強制
+        if (knownDuration === 0 && elapsed > 6 * 60 * 1000) return finish();
+        // state 連続取得失敗 10回 (約5秒)
+        if (stateMissCount >= 10 && elapsed > 10_000) return finish();
       }
       await sleep(500);
     }
@@ -481,7 +532,7 @@ $("mail-form").addEventListener("submit", async (e) => {
   const reqRaw = $("m-request").value.trim();
   // バリデーション: 入力があれば Spotify track URL でなければ拒否
   if (reqRaw && !/(?:track[:/])[A-Za-z0-9]{22}/.test(reqRaw)) {
-    $("m-status").textContent = "Request must be a Spotify track URL (https://open.spotify.com/track/...)";
+    $("m-status").textContent = "Spotifyの曲URL (https://open.spotify.com/track/...) を入力してください";
     return;
   }
   const payload = {
@@ -496,14 +547,14 @@ $("mail-form").addEventListener("submit", async (e) => {
     body: JSON.stringify(payload),
   });
   if (r.ok) {
-    $("m-status").textContent = "sent";
+    $("m-status").textContent = "投函しました";
     $("m-body").value = "";
     $("m-request").value = "";
     $("m-force").checked = false;
     refreshMails();
     setTimeout(() => ($("m-status").textContent = ""), 3000);
   } else {
-    $("m-status").textContent = "failed: " + (await r.text());
+    $("m-status").textContent = "失敗: " + (await r.text());
   }
 });
 
@@ -516,7 +567,7 @@ async function refreshMails() {
     for (const m of rows) {
       const li = document.createElement("li");
       if (m.force) li.classList.add("force");
-      const tag = m.status === "consumed" ? "READ" : m.status === "read" ? "READ" : "QUEUED";
+      const tag = m.status === "consumed" ? "消化" : m.status === "read" ? "読了" : "未読";
       const reqHtml = m.request ? `<span class="req">↪ ${escapeHtml(m.request)}</span>` : "";
       li.innerHTML =
         `<span class="name">${escapeHtml(m.radio_name)}` +
@@ -561,7 +612,7 @@ $("settings-form").addEventListener("submit", async (e) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  $("s-status").textContent = r.ok ? "saved" : "failed";
+  $("s-status").textContent = r.ok ? "保存しました" : "失敗";
   setTimeout(() => ($("s-status").textContent = ""), 3000);
 });
 

@@ -6,33 +6,33 @@
   <title>LLM24</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500&family=Noto+Sans+JP:wght@300;400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@400;500;600&family=Inter:wght@300;400;500&family=Noto+Sans+JP:wght@400;500;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <header class="hdr">
     <h1 class="brand">L L M 2 4</h1>
     <div class="status">
-      <button id="btn-theme" class="toggle" title="theme">DARK</button>
-      <span id="onair-indicator" class="indicator off">ON AIR</span>
-      <button id="btn-onair" class="btn">START</button>
-      <button id="btn-offair" class="btn" hidden>STOP</button>
-      <button id="btn-spotify-login" class="btn" hidden>SPOTIFY LOGIN</button>
+      <button id="btn-theme" class="toggle" title="表示モード切替">ダーク</button>
+      <span id="onair-indicator" class="indicator off">オンエア</span>
+      <button id="btn-onair" class="btn">開 始</button>
+      <button id="btn-offair" class="btn" hidden>停 止</button>
+      <button id="btn-spotify-login" class="btn" hidden>SPOTIFY ログイン</button>
     </div>
   </header>
 
   <main class="grid">
     <section class="cell now-playing">
-      <h2 class="cell-h">NOW PLAYING</h2>
+      <h2 class="cell-h">再生中</h2>
       <div class="np-art">
         <img id="np-art" alt="" class="art-img" src="">
-        <div id="np-art-fallback" class="art-fb">— OFF AIR —</div>
-        <div id="loading" class="loading">NOW LOADING<span class="dots">…</span></div>
+        <div id="np-art-fallback" class="art-fb">— オフエア —</div>
+        <div id="loading" class="loading">読み込み中<span class="dots">…</span></div>
       </div>
       <div class="np-meta">
         <div id="np-title" class="np-title">—</div>
         <div id="np-artist" class="np-artist">—</div>
-        <div id="np-state" class="np-state">idle</div>
+        <div id="np-state" class="np-state">停止中</div>
       </div>
       <div class="progress">
         <div id="progress-bar" class="progress-bar"></div>
@@ -42,76 +42,76 @@
     </section>
 
     <section class="cell mail">
-      <h2 class="cell-h">MAIL</h2>
+      <h2 class="cell-h">お便り</h2>
       <form id="mail-form" class="mail-form">
         <label class="field">
-          <span>Radio Name</span>
+          <span>ラジオネーム</span>
           <input id="m-name" type="text" maxlength="60" required>
         </label>
         <label class="field">
-          <span>Message</span>
+          <span>本文</span>
           <textarea id="m-body" rows="4" maxlength="2000" required></textarea>
         </label>
         <label class="field">
-          <span>Spotify track URL (optional)</span>
+          <span>Spotifyの曲URL (任意)</span>
           <input id="m-request" type="url" maxlength="500" placeholder="https://open.spotify.com/track/...">
         </label>
         <label class="check">
           <input id="m-force" type="checkbox">
-          <span>Apply to the very next track</span>
+          <span>次の曲で必ず反映する</span>
         </label>
-        <button class="btn btn-primary" type="submit">SEND</button>
+        <button class="btn btn-primary" type="submit">投 函</button>
         <div id="m-status" class="m-status"></div>
       </form>
       <div class="mail-history">
-        <h3 class="cell-h sub">SENT MAILS</h3>
+        <h3 class="cell-h sub">投函済み</h3>
         <ol id="mail-list" class="mail-list"></ol>
       </div>
     </section>
 
     <section class="cell recent">
-      <h2 class="cell-h">RECENT</h2>
+      <h2 class="cell-h">最近の曲</h2>
       <ol id="recent-list" class="recent-list"></ol>
     </section>
 
     <section class="cell settings">
-      <h2 class="cell-h">SETTINGS</h2>
+      <h2 class="cell-h">設定</h2>
       <details>
-        <summary>Open settings</summary>
+        <summary>設定を開く</summary>
         <form id="settings-form" class="settings-form">
           <label class="field">
-            <span>Genres (comma-separated)</span>
+            <span>ジャンル (カンマ区切り)</span>
             <input id="s-genres" type="text">
           </label>
           <label class="field">
-            <span>Excluded artists (comma-separated)</span>
+            <span>除外アーティスト (カンマ区切り)</span>
             <input id="s-excl-art" type="text">
           </label>
           <label class="field">
-            <span>Personality custom</span>
+            <span>性格カスタム</span>
             <input id="s-personality" type="text">
           </label>
           <label class="field">
-            <span>Chat frequency</span>
+            <span>雑談頻度</span>
             <select id="s-chat-freq">
-              <option value="loose">loose</option>
-              <option value="normal" selected>normal</option>
-              <option value="dense">dense</option>
+              <option value="loose">緩い</option>
+              <option value="normal" selected>普通</option>
+              <option value="dense">多め</option>
             </select>
           </label>
           <label class="field">
-            <span>Mail adoption rate</span>
+            <span>お便り採用率</span>
             <select id="s-mail-adopt">
-              <option value="every">every track</option>
-              <option value="every_few" selected>every few tracks</option>
-              <option value="when_full">when queue is full</option>
+              <option value="every">毎回</option>
+              <option value="every_few" selected>数曲に1回</option>
+              <option value="when_full">溜まったら</option>
             </select>
           </label>
           <label class="check">
             <input id="s-jingle" type="checkbox" checked>
-            <span>Time-signal jingle ON</span>
+            <span>時報ジングル ON</span>
           </label>
-          <button class="btn" type="submit">SAVE</button>
+          <button class="btn" type="submit">保 存</button>
           <div id="s-status" class="m-status"></div>
         </form>
       </details>

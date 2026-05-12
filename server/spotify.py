@@ -184,6 +184,26 @@ def parse_track_id(url_or_uri: str) -> str | None:
     return m.group(1) if m else None
 
 
+async def get_track_oembed(track_id: str) -> dict | None:
+    """Spotifyの oEmbed エンドポイント (認証不要・制限対象外) で track メタを取得。
+    /tracks/{id} は新規アプリで403になるので、リクエスト曲のタイトル/サムネはここから。
+    返り値例: {"title": "TrackTitle - Artist", "thumbnail_url": "..."}
+    """
+    url = f"https://open.spotify.com/track/{track_id}"
+    try:
+        async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
+            r = await client.get(
+                "https://open.spotify.com/oembed",
+                params={"url": url},
+                headers={"User-Agent": "LLM24/1.0"},
+            )
+            if r.status_code != 200:
+                return None
+            return r.json()
+    except (httpx.HTTPError, ValueError):
+        return None
+
+
 async def search_by_track_query(query: str, limit: int = 5) -> list[dict]:
     """フリーテキストで track 検索 (アーティスト+曲名 のような自然文OK)。"""
     if not query.strip():
