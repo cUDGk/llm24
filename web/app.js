@@ -167,6 +167,9 @@ window.onSpotifyWebPlaybackSDKReady = async () => {
   ST.player.addListener("ready", async ({ device_id }) => {
     ST.deviceId = device_id;
     console.log("[spotify] device ready:", device_id);
+    // device ready = 完全に認証通った状態。 login ボタンは絶対に隠す
+    $("btn-spotify-login").hidden = true;
+    $("btn-toggle").hidden = false;
     try {
       await fetch("/api/spotify/device", {
         method: "POST",
@@ -791,6 +794,11 @@ $("btn-lang").addEventListener("click", () => {
 
 (async () => {
   applyI18n();
+  // 初期状態を明示的にリセット (キャッシュやリロード履歴で状態が残らないように)
+  $("btn-spotify-login").hidden = true;
+  $("btn-toggle").hidden = false;
+  $("premium-warn").hidden = true;
+
   const r = await fetch("/api/status");
   const j = await r.json();
   if (!j.spotify_authenticated) {

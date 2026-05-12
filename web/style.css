@@ -67,6 +67,9 @@ a { color: inherit; }
 .btn-group .seg-btn + .seg-btn {
   border-left: 0;
 }
+/* flex の子でも hidden 属性を確実に効かせる */
+.btn-group [hidden],
+.status [hidden] { display: none !important; }
 .seg-btn {
   font-family: "Cinzel", serif;
   font-weight: 600;
