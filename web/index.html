@@ -34,6 +34,10 @@
         <div id="np-artist" class="np-artist">—</div>
         <div id="np-state" class="np-state">idle</div>
       </div>
+      <div class="progress">
+        <div id="progress-bar" class="progress-bar"></div>
+      </div>
+      <div id="progress-text" class="progress-text"></div>
       <div id="subtitle" class="subtitle"></div>
     </section>
 
@@ -49,8 +53,8 @@
           <textarea id="m-body" rows="4" maxlength="2000" required></textarea>
         </label>
         <label class="field">
-          <span>Request (optional)</span>
-          <input id="m-request" type="text" maxlength="500">
+          <span>Spotify track URL (optional)</span>
+          <input id="m-request" type="url" maxlength="500" placeholder="https://open.spotify.com/track/...">
         </label>
         <label class="check">
           <input id="m-force" type="checkbox">
@@ -59,6 +63,10 @@
         <button class="btn btn-primary" type="submit">SEND</button>
         <div id="m-status" class="m-status"></div>
       </form>
+      <div class="mail-history">
+        <h3 class="cell-h sub">SENT MAILS</h3>
+        <ol id="mail-list" class="mail-list"></ol>
+      </div>
     </section>
 
     <section class="cell recent">

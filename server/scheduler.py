@@ -185,25 +185,53 @@ async def _pick_from_charts(settings: dict, active_mail: dict | None) -> dict | 
     return random.choice(pool)
 
 
+async def _resolve_mail_track(mail: dict) -> dict | None:
+    """お便りのrequest欄から Spotify track URL/URI を解釈してトラックメタを返す。"""
+    if not mail or not mail.get("request"):
+        return None
+    track_id = spotify.parse_track_id(mail["request"])
+    if not track_id:
+        return None
+    # /tracks/{id} は新規アプリでは 403 になるので、Search で同じURIを探してメタを取る
+    try:
+        candidates = await spotify.search_by_track_query(
+            f"{mail.get('body','')} {mail.get('radio_name','')}", limit=10
+        )
+    except spotify.SpotifyError:
+        candidates = []
+    for c in candidates:
+        if c["id"] == track_id:
+            return c
+    # 見つからなくても再生だけは可能
+    return {
+        "id": track_id,
+        "uri": f"spotify:track:{track_id}",
+        "artist": "(requested)",
+        "title": "(requested)",
+        "duration_ms": 0,  # フロントが player state で監視
+        "popularity": None,
+        "album_image": None,
+    }
+
+
 async def _build_song_segment(
     settings: dict,
     now: datetime,
     active_mail: dict | None = None,
     mail_intro_text: str | None = None,
 ) -> dict[str, Any]:
-    """通常の曲振り or お便り絡みの曲振り。
-
-    選曲は Spotify 公式チャートプレイリストから取得 → 除外フィルタ → ランダム。
-    Claude は曲振り台本生成のみに使う (選曲の知識が古くてクリスマス曲とか出すため)。
-    """
+    """通常の曲振り or お便り絡みの曲振り。"""
     p = persona.current_persona(now)
     speaker = _voice_id(settings, p.slot, p.default_speaker_id)
 
     summaries = [s["summary"] for s in await db.recent_summaries(limit=30) if s["summary"]]
 
-    track = await _pick_from_charts(settings, active_mail)
+    # お便りのリクエストURLが解釈できれば最優先
+    track = await _resolve_mail_track(active_mail) if active_mail else None
+    if track is None:
+        track = await _pick_from_charts(settings, active_mail)
     if not track:
-        raise RuntimeError("チャートからの選曲に失敗 (プレイリストID/Spotify認証を確認)")
+        raise RuntimeError("選曲失敗 (Spotify認証 / シードアーティスト設定を確認)")
 
     # 曲振り台本生成
     intro = await claude_sdk.gen_song_intro(
@@ -226,16 +254,15 @@ async def _build_song_segment(
 
     _state.idx += 1
 
-    # お便りパート (mail_intro_text 渡された場合は前段に挿入)
+    # お便り部分は曲の前に逐次再生 (jingle → mail本文 → 曲振り は曲と同時)
     steps: list[dict[str, Any]] = []
     if mail_intro_text:
-        mail_jingle = settings.get("jingle_enabled", True)
-        if mail_jingle:
+        if settings.get("jingle_enabled", True):
             steps.append({"type": "jingle", "url": "/assets/jingle_mail.wav"})
         mail_tts = await voicevox.synthesize(mail_intro_text, speaker)
         steps.append({"type": "tts", "url": _cache_url(mail_tts), "text": mail_intro_text})
 
-    steps.append({"type": "tts", "url": _cache_url(intro_tts), "text": intro_text, "ducking": "intro"})
+    # 曲振り TTS は song step に内包 → 曲開始と同時にダッキング再生
     steps.append({
         "type": "song",
         "spotify_uri": track["uri"],
@@ -244,6 +271,7 @@ async def _build_song_segment(
         "artist": track["artist"],
         "title": track["title"],
         "album_image": track["album_image"],
+        "intro_tts": {"url": _cache_url(intro_tts), "text": intro_text},
     })
 
     return {

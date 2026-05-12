@@ -170,6 +170,37 @@ async def search_track(artist: str, title: str) -> dict | None:
         }
 
 
+import re as _re
+
+_TRACK_RE = _re.compile(r"(?:track[:/])([A-Za-z0-9]{22})")
+
+
+def parse_track_id(url_or_uri: str) -> str | None:
+    """Spotify track URL/URI から track id (22文字) を抽出。
+    対応: https://open.spotify.com/track/XXX, spotify:track:XXX, intl-* など"""
+    if not url_or_uri:
+        return None
+    m = _TRACK_RE.search(url_or_uri)
+    return m.group(1) if m else None
+
+
+async def search_by_track_query(query: str, limit: int = 5) -> list[dict]:
+    """フリーテキストで track 検索 (アーティスト+曲名 のような自然文OK)。"""
+    if not query.strip():
+        return []
+    token = await get_access_token()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(
+            "https://api.spotify.com/v1/search",
+            params={"q": query, "type": "track", "limit": min(limit, 10), "market": "JP"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if r.status_code != 200:
+            raise SpotifyError(f"text search failed: {r.status_code} {r.text}")
+        items = r.json().get("tracks", {}).get("items", [])
+        return [_normalize_track(t) for t in items if t and t.get("id")]
+
+
 def _normalize_track(tr: dict) -> dict:
     return {
         "id": tr["id"],

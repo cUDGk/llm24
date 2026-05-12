@@ -325,7 +325,6 @@ async function playSong(step) {
   } else {
     img.classList.remove("show");
     img.removeAttribute("src");
-    console.log("[ui] no album_image in step");
   }
   refreshRecent();
 
@@ -335,6 +334,22 @@ async function playSong(step) {
     $("np-state").textContent = "spotify error";
     await sleep(2000);
     return;
+  }
+
+  // 曲開始と同時にイントロ被せ (ダッキング)
+  if (step.intro_tts) {
+    // SDKが完全に曲再生に乗るまで少しだけ待つ (300ms)
+    await sleep(300);
+    try { await ST.player.setVolume(0.25); } catch {}
+    showSubtitle(step.intro_tts.text);
+    try {
+      const buf = await fetchAudioBuffer(step.intro_tts.url);
+      await playBuffer(buf);
+    } catch (e) {
+      console.warn("[tts] intro playback failed", e);
+    }
+    hideSubtitle();
+    try { await ST.player.setVolume(1.0); } catch {}
   }
 
   await waitSongEnd(step.duration_ms);
@@ -357,16 +372,65 @@ async function startSpotifyPlay(uri) {
 }
 
 function waitSongEnd(durationMs) {
-  return new Promise((resolve) => {
-    const start = Date.now();
-    const tick = () => {
-      if (!ST.onAir) { resolve(); return; }
-      const elapsed = Date.now() - start;
-      if (elapsed >= durationMs - 300) { resolve(); return; }
-      setTimeout(tick, 400);
+  // Spotify Player state を使って実際の再生進捗を監視する。
+  // duration_ms が 0 (リクエストURL直指定の場合) でも player state.duration から取得。
+  return new Promise(async (resolve) => {
+    const startWall = Date.now();
+    let lastPos = -1;
+    let lastChangeAt = Date.now();
+    let knownDuration = durationMs || 0;
+
+    const finish = () => {
+      updateProgress(0, 0);
+      resolve();
     };
-    tick();
+
+    while (ST.onAir) {
+      let state = null;
+      try { state = await ST.player.getCurrentState(); } catch {}
+      if (state && typeof state.duration === "number" && state.duration > 0) {
+        knownDuration = state.duration;
+        if (state.position !== lastPos) {
+          lastPos = state.position;
+          lastChangeAt = Date.now();
+        }
+        updateProgress(state.position, state.duration);
+        if (state.position >= state.duration - 400) return finish();
+        // 一時停止が長すぎる場合は終了扱い
+        if (state.paused && Date.now() - lastChangeAt > 5000 && state.position > 1000) return finish();
+      } else {
+        // SDKがstateを返せない時は壁時計フォールバック
+        const elapsed = Date.now() - startWall;
+        updateProgress(elapsed, knownDuration);
+        if (knownDuration > 0 && elapsed >= knownDuration - 400) return finish();
+        if (knownDuration === 0 && elapsed > 6 * 60 * 1000) return finish(); // 6分でも来なきゃ強制
+      }
+      await sleep(500);
+    }
+    finish();
   });
+}
+
+function updateProgress(positionMs, durationMs) {
+  const bar = $("progress-bar");
+  const txt = $("progress-text");
+  if (!bar || !txt) return;
+  if (!durationMs || durationMs <= 0) {
+    bar.style.width = "0%";
+    txt.textContent = "";
+    return;
+  }
+  const pct = Math.max(0, Math.min(100, (positionMs / durationMs) * 100));
+  bar.style.width = pct.toFixed(1) + "%";
+  txt.textContent = `${fmtMs(positionMs)} / ${fmtMs(durationMs)}  −${fmtMs(durationMs - positionMs)}`;
+}
+
+function fmtMs(ms) {
+  if (!ms || ms < 0) return "0:00";
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  const r = s % 60;
+  return `${m}:${r.toString().padStart(2, "0")}`;
 }
 
 // ----- stop chime: 880Hz × 3
@@ -414,10 +478,16 @@ function setIndicator(on) {
 
 $("mail-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  const reqRaw = $("m-request").value.trim();
+  // バリデーション: 入力があれば Spotify track URL でなければ拒否
+  if (reqRaw && !/(?:track[:/])[A-Za-z0-9]{22}/.test(reqRaw)) {
+    $("m-status").textContent = "Request must be a Spotify track URL (https://open.spotify.com/track/...)";
+    return;
+  }
   const payload = {
     radio_name: $("m-name").value.trim(),
     body: $("m-body").value.trim(),
-    request: $("m-request").value.trim() || null,
+    request: reqRaw || null,
     force: $("m-force").checked,
   };
   const r = await fetch("/api/mail", {
@@ -430,11 +500,34 @@ $("mail-form").addEventListener("submit", async (e) => {
     $("m-body").value = "";
     $("m-request").value = "";
     $("m-force").checked = false;
+    refreshMails();
     setTimeout(() => ($("m-status").textContent = ""), 3000);
   } else {
     $("m-status").textContent = "failed: " + (await r.text());
   }
 });
+
+async function refreshMails() {
+  try {
+    const r = await fetch("/api/mail?limit=30");
+    const rows = await r.json();
+    const ul = $("mail-list");
+    ul.innerHTML = "";
+    for (const m of rows) {
+      const li = document.createElement("li");
+      if (m.force) li.classList.add("force");
+      const tag = m.status === "consumed" ? "READ" : m.status === "read" ? "READ" : "QUEUED";
+      const reqHtml = m.request ? `<span class="req">↪ ${escapeHtml(m.request)}</span>` : "";
+      li.innerHTML =
+        `<span class="name">${escapeHtml(m.radio_name)}` +
+        `<span class="tag">${tag}${m.force ? " · FORCE" : ""}</span></span>` +
+        `<span class="body">${escapeHtml(m.body)}</span>${reqHtml}`;
+      ul.appendChild(li);
+    }
+  } catch (e) {
+    console.warn("[mail] list fetch failed", e);
+  }
+}
 
 // ----- settings
 
@@ -524,4 +617,6 @@ $("btn-theme").addEventListener("click", () => {
   }
   await loadSettings();
   await refreshRecent();
+  await refreshMails();
+  setInterval(refreshMails, 15000);
 })();
