@@ -150,6 +150,10 @@ async function transferPlayback(deviceId, play = false) {
 // ----- on/off air loop
 
 async function startOnAir() {
+  if (ST.onAir || ST.loopRunning) {
+    console.warn("[start] already on-air");
+    return;
+  }
   if (!ST.deviceId) {
     alert("Spotifyデバイス未準備。少し待って再度押してください。");
     return;
@@ -200,17 +204,33 @@ async function stopOnAir() {
 }
 
 async function loop() {
-  while (ST.onAir) {
-    try {
-      const r = await fetch("/api/next-segment");
-      if (!r.ok) throw new Error(await r.text());
-      const seg = await r.json();
-      await playSegment(seg);
-    } catch (e) {
-      console.error("[loop] segment error:", e);
-      $("np-state").textContent = t("state_error");
-      await sleep(3000);
+  if (ST.loopRunning) {
+    console.warn("[loop] already running, skip duplicate start");
+    return;
+  }
+  ST.loopRunning = true;
+  try {
+    while (ST.onAir) {
+      try {
+        const r = await fetch("/api/next-segment");
+        if (r.status === 409) {
+          console.warn("[loop] server reports not on-air → stopping client loop");
+          ST.onAir = false;
+          break;
+        }
+        if (!r.ok) throw new Error(`${r.status} ${await r.text()}`);
+        const seg = await r.json();
+        await playSegment(seg);
+      } catch (e) {
+        console.error("[loop] segment error:", e);
+        $("np-state").textContent = t("state_error");
+        // 3秒、ただしonAir解除されたら即抜ける
+        for (let i = 0; i < 15 && ST.onAir; i++) await sleep(200);
+      }
     }
+  } finally {
+    ST.loopRunning = false;
+    console.log("[loop] exited");
   }
 }
 
