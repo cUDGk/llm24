@@ -223,21 +223,26 @@ async def api_spotify_play(payload: PlayIn):
     if not _client_device_id:
         raise HTTPException(400, "no client device registered yet")
 
-    # 403 "Restriction violated" の主因は他Spotifyセッションが active のままなので、
-    # 毎回 transfer (play=true で強制アクティブ化) → 直後に play_uri
+    # 第1試行: 静かにデバイス転送 (play=False) してから目的URI再生。
+    # play=True で transfer すると前の曲のキューが一瞬鳴るので、デフォは play=False。
     try:
-        await spotify.transfer_playback(_client_device_id, play=True)
-        await _asyncio.sleep(0.4)
+        await spotify.transfer_playback(_client_device_id, play=False)
+        await _asyncio.sleep(0.25)
         await spotify.play_uri(_client_device_id, payload.uri)
         return {"ok": True}
     except spotify.SpotifyError as e1:
-        print(f"[spotify] play try1 failed: {e1}", flush=True)
+        print(f"[spotify] play try1 (silent transfer) failed: {e1}", flush=True)
 
-    # 1秒待ってもう1回
-    await _asyncio.sleep(1.0)
+    # 第2試行: play=True で強制アクティブ化 → 即pauseで前曲を止める → 目的URIへ
+    await _asyncio.sleep(0.6)
     try:
         await spotify.transfer_playback(_client_device_id, play=True)
-        await _asyncio.sleep(0.5)
+        await _asyncio.sleep(0.2)
+        try:
+            await spotify.pause(_client_device_id)
+        except spotify.SpotifyError:
+            pass
+        await _asyncio.sleep(0.15)
         await spotify.play_uri(_client_device_id, payload.uri)
         return {"ok": True}
     except spotify.SpotifyError as e2:
