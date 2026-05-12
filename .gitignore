@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv/
+venv/
+env/
+
+# Data / runtime
+data/llm24.db
+data/llm24.db-journal
+data/llm24.db-wal
+data/llm24.db-shm
+data/cache/*
+!data/cache/.gitkeep
+data/settings.json
+
+# Vendor (VOICEVOX runtime, too large for git)
+vendor/voicevox/
+vendor/*.zip
+vendor/*.7z
+
+# Secrets
+.env
+.env.local
+
+# Assets binary (keep .gitkeep)
+assets/*.wav
+assets/*.mp3
+!assets/.gitkeep
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Logs
+*.log
+logs/
