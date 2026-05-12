@@ -187,8 +187,8 @@ async def api_settings_get():
 @app.put("/api/settings")
 async def api_settings_put(payload: dict[str, Any]):
     updated = settings_store.update_settings(payload)
-    # seed_artists / exclude が変わった場合は artist_tracks キャッシュ無効化
     await db.cache_invalidate_kind("artist_tracks")
+    await db.cache_invalidate_kind("genre_tracks")
     return updated
 
 

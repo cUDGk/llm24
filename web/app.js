@@ -57,15 +57,88 @@ for (const lvl of ["warn", "error"]) {
 window.addEventListener("error", (e) => _ship("error", [`window.onerror: ${e.message} @ ${e.filename}:${e.lineno}`]));
 window.addEventListener("unhandledrejection", (e) => _ship("error", [`unhandledrejection: ${e.reason}`]));
 
-// ----- theme
+// ----- theme & i18n
 
 const UI = {
   theme: localStorage.getItem("llm24_theme") || "dark",
+  lang: localStorage.getItem("llm24_lang") || "ja",
 };
+
+const I18N = {
+  ja: {
+    onair_off: "オンエア",
+    theme_dark: "ダーク", theme_light: "ライト",
+    start: "開 始", stop: "停 止", spotify_login: "SPOTIFY ログイン",
+    now_playing: t("state_playing"), off_air: "— オフエア —",
+    now_loading: "読み込み中",
+    state_idle: t("state_idle"), state_on_air: t("state_on_air"), state_playing: t("state_playing"),
+    state_stopping: t("state_stopping"), state_error: t("state_error"),
+    next_track: "次の曲",
+    mail: "お便り", radio_name: "ラジオネーム", body: "本文",
+    track_url: "Spotifyの曲URL (任意)", force_next: "次の曲で必ず反映する",
+    submit: "投 函", submit_ok: "投函しました", submit_fail: "失敗",
+    bad_url: "Spotifyの曲URL (https://open.spotify.com/track/...) を入力してください",
+    sent_mails: "投函済み",
+    tag_queued: "未読", tag_read: "読了", tag_consumed: "消化",
+    recent: "最近の曲", settings: "設定", open_settings: "設定を開く",
+    genres: "ジャンル (カンマ区切り)", excl_artists: "除外アーティスト (カンマ区切り)",
+    personality: "性格カスタム", chat_freq: "雑談頻度",
+    freq_loose: "緩い", freq_normal: "普通", freq_dense: "多め",
+    mail_adoption: "お便り採用率",
+    adopt_every: "毎回", adopt_few: "数曲に1回", adopt_full: "溜まったら",
+    jingle_on: "時報ジングル ON", save: "保 存", save_ok: "保存しました",
+    spotify_not_ready: "Spotifyデバイス未準備。少し待って再度押してください。",
+    onair_failed: "オンエア開始失敗: ",
+    premium_required: "Premium未加入: 再生不可",
+  },
+  en: {
+    onair_off: "ON AIR",
+    theme_dark: "DARK", theme_light: "LIGHT",
+    start: "START", stop: "STOP", spotify_login: "SPOTIFY LOGIN",
+    now_playing: "NOW PLAYING", off_air: "— OFF AIR —",
+    now_loading: "NOW LOADING",
+    state_idle: "idle", state_on_air: "on air", state_playing: "playing",
+    state_stopping: "stopping", state_error: "error (retry in 3s)",
+    next_track: "NEXT",
+    mail: "MAIL", radio_name: "Radio Name", body: "Message",
+    track_url: "Spotify track URL (optional)", force_next: "Apply to the very next track",
+    submit: "SEND", submit_ok: "sent", submit_fail: "failed",
+    bad_url: "Must be a Spotify track URL (https://open.spotify.com/track/...)",
+    sent_mails: "SENT MAILS",
+    tag_queued: "QUEUED", tag_read: "READ", tag_consumed: "READ",
+    recent: "RECENT", settings: "SETTINGS", open_settings: "Open settings",
+    genres: "Genres (comma-separated)", excl_artists: "Excluded artists (comma-separated)",
+    personality: "Personality custom", chat_freq: "Chat frequency",
+    freq_loose: "loose", freq_normal: "normal", freq_dense: "dense",
+    mail_adoption: "Mail adoption rate",
+    adopt_every: "every track", adopt_few: "every few tracks", adopt_full: "when queue is full",
+    jingle_on: "Time-signal jingle ON", save: "SAVE", save_ok: "saved",
+    spotify_not_ready: "Spotify device not ready yet. Wait a moment and press START again.",
+    onair_failed: "ON AIR failed: ",
+    premium_required: "Premium required: playback unavailable",
+  },
+};
+
+function t(key) {
+  return (I18N[UI.lang] || I18N.ja)[key] ?? key;
+}
+
+function applyI18n() {
+  const dict = I18N[UI.lang] || I18N.ja;
+  for (const el of document.querySelectorAll("[data-i18n]")) {
+    const key = el.getAttribute("data-i18n");
+    if (dict[key] != null) el.textContent = dict[key];
+  }
+  document.documentElement.lang = UI.lang;
+  const lb = $("btn-lang");
+  if (lb) lb.textContent = UI.lang.toUpperCase();
+  applyTheme(); // テーマボタンのラベルが言語依存
+}
 
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", UI.theme);
-  $("btn-theme").textContent = UI.theme === "dark" ? "ダーク" : "ライト";
+  const btn = $("btn-theme");
+  if (btn) btn.textContent = UI.theme === "dark" ? t("theme_dark") : t("theme_light");
 }
 
 // ----- token
@@ -148,7 +221,7 @@ async function startOnAir() {
     return;
   }
   if (!ST.deviceId) {
-    alert("Spotifyデバイス未準備。少し待ってからもう一度押してください。");
+    alert(t("spotify_not_ready"));
     return;
   }
   if (!ST.audioCtx) {
@@ -159,7 +232,7 @@ async function startOnAir() {
   const r = await fetch("/api/onair", { method: "POST" });
   if (!r.ok) {
     const msg = await r.text();
-    alert("オンエア開始失敗: " + msg);
+    alert(t("onair_failed") + msg);
     return;
   }
   ST.onAir = true;
@@ -242,7 +315,7 @@ async function loop() {
         showLoading(false);
         ST.nextSegmentPromise = null;
         console.error("[loop] segment error:", e);
-        $("np-state").textContent = "エラー (3秒後に再試行)";
+        $("np-state").textContent = t("state_error");
         for (let i = 0; i < 15 && ST.onAir; i++) await sleep(200);
       }
     }
@@ -269,6 +342,29 @@ async function fetchNextSegment() {
   } catch (e) {
     console.warn("[loop] fetchNextSegment threw", e);
     return null;
+  }
+}
+
+function setAlbumArt(url) {
+  const img = $("np-art");
+  // 一旦リセット (同じ src を再設定しても load イベントが発火しないため)
+  img.classList.remove("show");
+  img.onload = null;
+  img.onerror = null;
+  img.removeAttribute("src");
+
+  if (!url) return;
+
+  img.onload = () => img.classList.add("show");
+  img.onerror = () => {
+    img.classList.remove("show");
+    console.warn("[ui] album image failed to load:", url);
+  };
+  // src 設定で load 開始
+  img.src = url;
+  // 既にブラウザキャッシュにあれば complete が即 true、onload を待たずに show を付ける
+  if (img.complete && img.naturalWidth > 0) {
+    img.classList.add("show");
   }
 }
 
@@ -374,18 +470,7 @@ async function playSong(step) {
   $("np-title").textContent = step.title;
   $("np-artist").textContent = step.artist;
   $("np-state").textContent = "playing";
-  const img = $("np-art");
-  if (step.album_image) {
-    img.onload = () => img.classList.add("show");
-    img.onerror = () => {
-      img.classList.remove("show");
-      console.warn("[ui] album image failed to load:", step.album_image);
-    };
-    img.src = step.album_image;
-  } else {
-    img.classList.remove("show");
-    img.removeAttribute("src");
-  }
+  setAlbumArt(step.album_image);
   refreshRecent();
 
   const ok = await startSpotifyPlay(step.spotify_uri);
@@ -551,7 +636,7 @@ $("mail-form").addEventListener("submit", async (e) => {
   const reqRaw = $("m-request").value.trim();
   // バリデーション: 入力があれば Spotify track URL でなければ拒否
   if (reqRaw && !/(?:track[:/])[A-Za-z0-9]{22}/.test(reqRaw)) {
-    $("m-status").textContent = "Spotifyの曲URL (https://open.spotify.com/track/...) を入力してください";
+    $("m-status").textContent = t("bad_url");
     return;
   }
   const payload = {
@@ -566,14 +651,14 @@ $("mail-form").addEventListener("submit", async (e) => {
     body: JSON.stringify(payload),
   });
   if (r.ok) {
-    $("m-status").textContent = "投函しました";
+    $("m-status").textContent = t("submit_ok");
     $("m-body").value = "";
     $("m-request").value = "";
     $("m-force").checked = false;
     refreshMails();
     setTimeout(() => ($("m-status").textContent = ""), 3000);
   } else {
-    $("m-status").textContent = "失敗: " + (await r.text());
+    $("m-status").textContent = t("submit_fail") + ": " + (await r.text());
   }
 });
 
@@ -586,7 +671,7 @@ async function refreshMails() {
     for (const m of rows) {
       const li = document.createElement("li");
       if (m.force) li.classList.add("force");
-      const tag = m.status === "consumed" ? "消化" : m.status === "read" ? "読了" : "未読";
+      const tag = m.status === "consumed" ? t("tag_consumed") : m.status === "read" ? t("tag_read") : t("tag_queued");
       const reqHtml = m.request ? `<span class="req">↪ ${escapeHtml(m.request)}</span>` : "";
       li.innerHTML =
         `<span class="name">${escapeHtml(m.radio_name)}` +
@@ -631,7 +716,7 @@ $("settings-form").addEventListener("submit", async (e) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  $("s-status").textContent = r.ok ? "保存しました" : "失敗";
+  $("s-status").textContent = r.ok ? t("save_ok") : t("submit_fail");
   setTimeout(() => ($("s-status").textContent = ""), 3000);
 });
 
@@ -675,9 +760,19 @@ $("btn-theme").addEventListener("click", () => {
   applyTheme();
 });
 
+$("btn-lang").addEventListener("click", () => {
+  UI.lang = UI.lang === "ja" ? "en" : "ja";
+  localStorage.setItem("llm24_lang", UI.lang);
+  applyI18n();
+  // 動的に書いてるテキストの追従
+  if (ST.onAir) $("np-state").textContent = t("state_on_air");
+  else if (!ST.player) {} else $("np-state").textContent = t("state_idle");
+});
+
 // ----- init
 
 (async () => {
+  applyI18n();
   applyTheme();
   const r = await fetch("/api/status");
   const j = await r.json();
@@ -692,7 +787,7 @@ $("btn-theme").addEventListener("click", () => {
         const pj = await pr.json();
         if (!pj.is_premium) {
           const w = $("premium-warn");
-          w.textContent = "Premium未加入: 再生不可";
+          w.textContent = t("premium_required");
           w.hidden = false;
           console.warn("[spotify] account is not Premium → playback will fail");
         }

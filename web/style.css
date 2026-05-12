@@ -62,27 +62,41 @@ a { color: inherit; }
   letter-spacing: 0.6em;
   font-size: 1.7rem;
 }
-.status { display: flex; gap: 0.6rem; align-items: center; }
+.status { display: flex; gap: 0.6rem; align-items: stretch; }
 
-.toggle {
+.btn-group {
+  display: inline-flex;
+  align-items: stretch;
+}
+.btn-group .seg-btn + .seg-btn {
+  border-left: 0;
+}
+.seg-btn {
   font-family: "Cinzel", serif;
   font-weight: 600;
-  letter-spacing: 0.2em;
-  font-size: 0.7rem;
-  padding: 0.35rem 0.7rem;
+  letter-spacing: 0.18em;
+  font-size: 0.78rem;
+  height: 2.4rem;
+  padding: 0 1.1rem;
+  min-width: 5.2rem;
   border: 2px solid var(--rule);
-  color: var(--dim);
+  color: var(--fg);
   background: transparent;
   cursor: pointer;
-  min-width: 3.6rem;
+  transition: background 80ms linear, color 80ms linear, border-color 80ms linear;
+  display: inline-flex; align-items: center; justify-content: center;
 }
-.toggle:hover { color: var(--fg); border-color: var(--fg); }
+.seg-btn:hover { background: var(--fg); color: var(--bg); border-color: var(--fg); }
+.seg-btn.primary { border-color: var(--accent); color: var(--accent); }
+.seg-btn.primary:hover { background: var(--accent); color: var(--fg); border-color: var(--accent); }
 
 .indicator {
   font-family: "Cinzel", serif;
   font-weight: 600;
   letter-spacing: 0.3em;
-  padding: 0.3rem 0.7rem;
+  padding: 0 0.8rem;
+  height: 2.4rem;
+  display: inline-flex; align-items: center;
   border: 2px solid var(--rule);
   font-size: 0.85rem;
 }
@@ -221,7 +235,9 @@ a { color: inherit; }
   letter-spacing: 0.2em;
   color: var(--accent);
   border: 2px solid var(--accent);
-  padding: 0.25rem 0.6rem;
+  padding: 0 0.7rem;
+  height: 2.4rem;
+  display: inline-flex; align-items: center;
 }
 
 .progress {

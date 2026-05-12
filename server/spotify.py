@@ -303,6 +303,32 @@ async def get_top_tracks(time_range: str = "medium_term", limit: int = 50) -> li
         return [_normalize_track(t) for t in r.json().get("items", [])]
 
 
+async def search_by_genre(genre: str, market: str = "JP") -> list[dict]:
+    """ジャンル名 (フリーテキスト) で track 検索。1時間キャッシュ。
+    Spotifyの公式 'genre:' filter は限定されたタグでしか動かないので、フリーテキストsearch
+    の方が日本語ジャンル名 (シティポップ等) に対応できる。"""
+    from . import db
+    cache_key = f"{market}:{genre}"
+    cached = await db.cache_get("genre_tracks", cache_key)
+    if cached is not None:
+        return cached
+
+    token = await get_access_token()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(
+            "https://api.spotify.com/v1/search",
+            params={"q": genre, "type": "track", "limit": 10, "market": market},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if r.status_code != 200:
+            raise SpotifyError(f"genre search failed: {r.status_code} {r.text}")
+        items = r.json().get("tracks", {}).get("items", [])
+        normalized = [_normalize_track(t) for t in items if t and t.get("id")]
+
+    await db.cache_put("genre_tracks", cache_key, normalized, ttl_seconds=3600)
+    return normalized
+
+
 async def search_recent(year_range: str = "2024-2026", limit: int = 10, query_extra: str = "") -> list[dict]:
     """Search API で年代指定。403対象外 → 公式プレイリスト代替。"""
     token = await get_access_token()

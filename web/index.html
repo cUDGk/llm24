@@ -13,27 +13,30 @@
   <header class="hdr">
     <h1 class="brand">L L M 2 4</h1>
     <div class="status">
-      <button id="btn-theme" class="toggle" title="表示モード切替">ダーク</button>
       <span id="premium-warn" class="premium-warn" hidden>Premium未確認</span>
-      <span id="onair-indicator" class="indicator off">オンエア</span>
-      <button id="btn-onair" class="btn">開 始</button>
-      <button id="btn-offair" class="btn" hidden>停 止</button>
-      <button id="btn-spotify-login" class="btn" hidden>SPOTIFY ログイン</button>
+      <span id="onair-indicator" class="indicator off" data-i18n="onair_off">オンエア</span>
+      <div class="btn-group">
+        <button id="btn-lang" class="seg-btn" title="language">JA</button>
+        <button id="btn-theme" class="seg-btn" title="theme" data-i18n="theme_dark">ダーク</button>
+        <button id="btn-onair" class="seg-btn primary" data-i18n="start">開 始</button>
+        <button id="btn-offair" class="seg-btn primary" hidden data-i18n="stop">停 止</button>
+        <button id="btn-spotify-login" class="seg-btn primary" hidden data-i18n="spotify_login">SPOTIFY ログイン</button>
+      </div>
     </div>
   </header>
 
   <main class="grid">
     <section class="cell now-playing">
-      <h2 class="cell-h">再生中</h2>
+      <h2 class="cell-h" data-i18n="now_playing">再生中</h2>
       <div class="np-art">
         <img id="np-art" alt="" class="art-img" src="">
-        <div id="np-art-fallback" class="art-fb">— オフエア —</div>
-        <div id="loading" class="loading">読み込み中<span class="dots">…</span></div>
+        <div id="np-art-fallback" class="art-fb" data-i18n="off_air">— オフエア —</div>
+        <div id="loading" class="loading"><span data-i18n="now_loading">読み込み中</span><span class="dots">…</span></div>
       </div>
       <div class="np-meta">
         <div id="np-title" class="np-title">—</div>
         <div id="np-artist" class="np-artist">—</div>
-        <div id="np-state" class="np-state">停止中</div>
+        <div id="np-state" class="np-state" data-i18n="state_idle">停止中</div>
       </div>
       <div class="progress">
         <div id="progress-bar" class="progress-bar"></div>
@@ -41,83 +44,83 @@
       <div id="progress-text" class="progress-text"></div>
       <div id="subtitle" class="subtitle"></div>
       <div id="next-up" class="next-up" hidden>
-        <span class="next-label">次の曲</span>
+        <span class="next-label" data-i18n="next_track">次の曲</span>
         <span id="next-title" class="next-title"></span>
         <span id="next-artist" class="next-artist"></span>
       </div>
     </section>
 
     <section class="cell mail">
-      <h2 class="cell-h">お便り</h2>
+      <h2 class="cell-h" data-i18n="mail">お便り</h2>
       <form id="mail-form" class="mail-form">
         <label class="field">
-          <span>ラジオネーム</span>
+          <span data-i18n="radio_name">ラジオネーム</span>
           <input id="m-name" type="text" maxlength="60" required>
         </label>
         <label class="field">
-          <span>本文</span>
+          <span data-i18n="body">本文</span>
           <textarea id="m-body" rows="4" maxlength="2000" required></textarea>
         </label>
         <label class="field">
-          <span>Spotifyの曲URL (任意)</span>
+          <span data-i18n="track_url">Spotifyの曲URL (任意)</span>
           <input id="m-request" type="url" maxlength="500" placeholder="https://open.spotify.com/track/...">
         </label>
         <label class="check">
           <input id="m-force" type="checkbox">
-          <span>次の曲で必ず反映する</span>
+          <span data-i18n="force_next">次の曲で必ず反映する</span>
         </label>
-        <button class="btn btn-primary" type="submit">投 函</button>
+        <button class="btn btn-primary" type="submit" data-i18n="submit">投 函</button>
         <div id="m-status" class="m-status"></div>
       </form>
       <div class="mail-history">
-        <h3 class="cell-h sub">投函済み</h3>
+        <h3 class="cell-h sub" data-i18n="sent_mails">投函済み</h3>
         <ol id="mail-list" class="mail-list"></ol>
       </div>
     </section>
 
     <section class="cell recent">
-      <h2 class="cell-h">最近の曲</h2>
+      <h2 class="cell-h" data-i18n="recent">最近の曲</h2>
       <ol id="recent-list" class="recent-list"></ol>
     </section>
 
     <section class="cell settings">
-      <h2 class="cell-h">設定</h2>
+      <h2 class="cell-h" data-i18n="settings">設定</h2>
       <details>
-        <summary>設定を開く</summary>
+        <summary data-i18n="open_settings">設定を開く</summary>
         <form id="settings-form" class="settings-form">
           <label class="field">
-            <span>ジャンル (カンマ区切り)</span>
+            <span data-i18n="genres">ジャンル (カンマ区切り)</span>
             <input id="s-genres" type="text">
           </label>
           <label class="field">
-            <span>除外アーティスト (カンマ区切り)</span>
+            <span data-i18n="excl_artists">除外アーティスト (カンマ区切り)</span>
             <input id="s-excl-art" type="text">
           </label>
           <label class="field">
-            <span>性格カスタム</span>
+            <span data-i18n="personality">性格カスタム</span>
             <input id="s-personality" type="text">
           </label>
           <label class="field">
-            <span>雑談頻度</span>
+            <span data-i18n="chat_freq">雑談頻度</span>
             <select id="s-chat-freq">
-              <option value="loose">緩い</option>
-              <option value="normal" selected>普通</option>
-              <option value="dense">多め</option>
+              <option value="loose" data-i18n="freq_loose">緩い</option>
+              <option value="normal" selected data-i18n="freq_normal">普通</option>
+              <option value="dense" data-i18n="freq_dense">多め</option>
             </select>
           </label>
           <label class="field">
-            <span>お便り採用率</span>
+            <span data-i18n="mail_adoption">お便り採用率</span>
             <select id="s-mail-adopt">
-              <option value="every">毎回</option>
-              <option value="every_few" selected>数曲に1回</option>
-              <option value="when_full">溜まったら</option>
+              <option value="every" data-i18n="adopt_every">毎回</option>
+              <option value="every_few" selected data-i18n="adopt_few">数曲に1回</option>
+              <option value="when_full" data-i18n="adopt_full">溜まったら</option>
             </select>
           </label>
           <label class="check">
             <input id="s-jingle" type="checkbox" checked>
-            <span>時報ジングル ON</span>
+            <span data-i18n="jingle_on">時報ジングル ON</span>
           </label>
-          <button class="btn" type="submit">保 存</button>
+          <button class="btn" type="submit" data-i18n="save">保 存</button>
           <div id="s-status" class="m-status"></div>
         </form>
       </details>

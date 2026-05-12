@@ -103,10 +103,21 @@ def _cache_url(path: Path) -> str:
 
 
 async def _build_candidate_pool(settings: dict) -> list[dict]:
-    """シードアーティストの top-tracks を合算 + ユーザー top tracks (取れれば) でプール構築。
-    API は並列で同時取得 (キャッシュ層が裏にあるので2回目以降は瞬時)。
+    """候補プール構築。並列取得 (キャッシュあり)。
+    ソース:
+      A. settings.genres (ジャンル名) で /search → 同ジャンル想定の曲
+      B. settings.seed_artists (アーティスト名) で /search → 推し系の曲
+      C. /me/top/tracks (取れれば) → ユーザーの好み
+    プールはランダムシャッフル。
     """
+    genres = settings.get("genres", []) or []
     seeds = settings.get("seed_artists", []) or []
+
+    async def _safe_genre(g: str) -> list[dict]:
+        try:
+            return await spotify.search_by_genre(g)
+        except spotify.SpotifyError:
+            return []
 
     async def _safe_artist(name: str) -> list[dict]:
         try:
@@ -120,12 +131,16 @@ async def _build_candidate_pool(settings: dict) -> list[dict]:
         except spotify.SpotifyError:
             return []
 
-    artist_results = await asyncio.gather(*(_safe_artist(n) for n in seeds))
-    top_results = await asyncio.gather(_safe_top("medium_term"), _safe_top("short_term"))
+    genre_task = asyncio.gather(*(_safe_genre(g) for g in genres))
+    artist_task = asyncio.gather(*(_safe_artist(n) for n in seeds))
+    top_task = asyncio.gather(_safe_top("medium_term"), _safe_top("short_term"))
+    genre_results, artist_results, top_results = await asyncio.gather(
+        genre_task, artist_task, top_task
+    )
 
     pool: list[dict] = []
     seen_ids: set[str] = set()
-    for tracks in artist_results + top_results:
+    for tracks in genre_results + artist_results + top_results:
         for t in tracks:
             if t["id"] in seen_ids:
                 continue
