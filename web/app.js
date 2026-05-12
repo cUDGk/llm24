@@ -22,65 +22,49 @@ const ST = {
 const $ = (id) => document.getElementById(id);
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// ----- i18n & theme
+// ----- client log forward (so the assistant can read errors from server logs)
 
-const I18N = {
-  ja: {
-    start: "START", stop: "STOP", spotify_login: "SPOTIFY LOGIN",
-    now_playing: "NOW PLAYING", off_air: "— OFF AIR —", state_idle: "idle",
-    state_on_air: "on air", state_playing: "playing", state_stopping: "stopping",
-    state_error: "error (retry in 3s)",
-    mail: "MAIL", radio_name: "ラジオネーム", body: "本文",
-    request: "リクエスト (任意)", force_next: "次の曲で必ず反映する",
-    submit: "投 函", submit_ok: "投函しました", submit_fail: "失敗",
-    recent: "RECENT", settings: "SETTINGS", open_settings: "設定を開く",
-    genres: "ジャンル (カンマ区切り)", excl_artists: "除外アーティスト (カンマ区切り)",
-    personality: "性格カスタム", chat_freq: "雑談頻度",
-    freq_loose: "緩い", freq_normal: "普通", freq_dense: "多め",
-    mail_adoption: "お便り採用率",
-    adopt_every: "毎回", adopt_few: "数曲に1回", adopt_full: "溜まったら",
-    jingle_on: "時報ジングル ON", save: "保 存", save_ok: "保存しました",
-  },
-  en: {
-    start: "START", stop: "STOP", spotify_login: "SPOTIFY LOGIN",
-    now_playing: "NOW PLAYING", off_air: "— OFF AIR —", state_idle: "idle",
-    state_on_air: "on air", state_playing: "playing", state_stopping: "stopping",
-    state_error: "error (retry in 3s)",
-    mail: "MAIL", radio_name: "Radio Name", body: "Message",
-    request: "Request (optional)", force_next: "Apply to the very next song",
-    submit: "SEND", submit_ok: "sent", submit_fail: "failed",
-    recent: "RECENT", settings: "SETTINGS", open_settings: "Open settings",
-    genres: "Genres (comma-separated)", excl_artists: "Excluded artists (comma-separated)",
-    personality: "Personality custom", chat_freq: "Chat frequency",
-    freq_loose: "loose", freq_normal: "normal", freq_dense: "dense",
-    mail_adoption: "Mail adoption rate",
-    adopt_every: "every track", adopt_few: "every few tracks", adopt_full: "when queue is full",
-    jingle_on: "Time-signal jingle ON", save: "SAVE", save_ok: "saved",
-  },
-};
+function _fmt(args) {
+  return args
+    .map((a) => {
+      if (a instanceof Error) return `${a.name}: ${a.message}`;
+      if (typeof a === "string") return a;
+      try { return JSON.stringify(a); } catch { return String(a); }
+    })
+    .join(" ");
+}
+
+function _ship(level, args) {
+  const msg = _fmt(args).slice(0, 4000);
+  try {
+    fetch("/api/clientlog", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ level, msg }),
+      keepalive: true,
+    }).catch(() => {});
+  } catch {}
+}
+
+for (const lvl of ["log", "warn", "error"]) {
+  const orig = console[lvl].bind(console);
+  console[lvl] = (...args) => {
+    orig(...args);
+    _ship(lvl, args);
+  };
+}
+window.addEventListener("error", (e) => _ship("error", [`window.onerror: ${e.message} @ ${e.filename}:${e.lineno}`]));
+window.addEventListener("unhandledrejection", (e) => _ship("error", [`unhandledrejection: ${e.reason}`]));
+
+// ----- theme
 
 const UI = {
-  lang: localStorage.getItem("llm24_lang") || "ja",
   theme: localStorage.getItem("llm24_theme") || "dark",
 };
-
-function applyI18n() {
-  const dict = I18N[UI.lang] || I18N.ja;
-  for (const el of document.querySelectorAll("[data-i18n]")) {
-    const key = el.getAttribute("data-i18n");
-    if (dict[key] != null) el.textContent = dict[key];
-  }
-  document.documentElement.lang = UI.lang;
-  $("btn-lang").textContent = UI.lang.toUpperCase();
-}
 
 function applyTheme() {
   document.documentElement.setAttribute("data-theme", UI.theme);
   $("btn-theme").textContent = UI.theme.toUpperCase();
-}
-
-function t(key) {
-  return (I18N[UI.lang] || I18N.ja)[key] ?? key;
 }
 
 // ----- token
@@ -155,7 +139,7 @@ async function startOnAir() {
     return;
   }
   if (!ST.deviceId) {
-    alert("Spotifyデバイス未準備。少し待って再度押してください。");
+    alert("Spotify device not ready yet. Wait a moment and press START again.");
     return;
   }
   if (!ST.audioCtx) {
@@ -166,7 +150,7 @@ async function startOnAir() {
   const r = await fetch("/api/onair", { method: "POST" });
   if (!r.ok) {
     const msg = await r.text();
-    alert("ON AIR失敗: " + msg);
+    alert("ON AIR failed: " + msg);
     return;
   }
   ST.onAir = true;
@@ -174,7 +158,7 @@ async function startOnAir() {
   setIndicator(true);
   $("btn-onair").hidden = true;
   $("btn-offair").hidden = false;
-  $("np-state").textContent = t("state_on_air");
+  $("np-state").textContent = "on air";
   loop();
 }
 
@@ -184,7 +168,7 @@ async function stopOnAir() {
   setIndicator(false);
   $("btn-onair").hidden = false;
   $("btn-offair").hidden = true;
-  $("np-state").textContent = t("state_stopping");
+  $("np-state").textContent = "stopping";
 
   if (ST.player) {
     for (let v = 1.0; v >= 0; v -= 0.1) {
@@ -197,7 +181,7 @@ async function stopOnAir() {
 
   await playStopChime();
   await fetch("/api/offair", { method: "POST" });
-  $("np-state").textContent = t("state_idle");
+  $("np-state").textContent = "idle";
   $("np-title").textContent = "—";
   $("np-artist").textContent = "—";
   $("np-art").classList.remove("show");
@@ -223,7 +207,7 @@ async function loop() {
         await playSegment(seg);
       } catch (e) {
         console.error("[loop] segment error:", e);
-        $("np-state").textContent = t("state_error");
+        $("np-state").textContent = "error (retry in 3s)";
         // 3秒、ただしonAir解除されたら即抜ける
         for (let i = 0; i < 15 && ST.onAir; i++) await sleep(200);
       }
@@ -311,7 +295,7 @@ async function playSong(step) {
   ST.currentTrack = step;
   $("np-title").textContent = step.title;
   $("np-artist").textContent = step.artist;
-  $("np-state").textContent = t("state_playing");
+  $("np-state").textContent = "playing";
   if (step.album_image) {
     $("np-art").src = step.album_image;
     $("np-art").classList.add("show");
@@ -438,13 +422,13 @@ $("mail-form").addEventListener("submit", async (e) => {
     body: JSON.stringify(payload),
   });
   if (r.ok) {
-    $("m-status").textContent = t("submit_ok");
+    $("m-status").textContent = "sent";
     $("m-body").value = "";
     $("m-request").value = "";
     $("m-force").checked = false;
     setTimeout(() => ($("m-status").textContent = ""), 3000);
   } else {
-    $("m-status").textContent = t("submit_fail") + ": " + (await r.text());
+    $("m-status").textContent = "failed: " + (await r.text());
   }
 });
 
@@ -480,7 +464,7 @@ $("settings-form").addEventListener("submit", async (e) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(payload),
   });
-  $("s-status").textContent = r.ok ? t("save_ok") : t("submit_fail");
+  $("s-status").textContent = r.ok ? "saved" : "failed";
   setTimeout(() => ($("s-status").textContent = ""), 3000);
 });
 
@@ -518,12 +502,6 @@ $("btn-spotify-login").addEventListener("click", () => {
   window.location.href = "/auth/spotify";
 });
 
-$("btn-lang").addEventListener("click", () => {
-  UI.lang = UI.lang === "ja" ? "en" : "ja";
-  localStorage.setItem("llm24_lang", UI.lang);
-  applyI18n();
-});
-
 $("btn-theme").addEventListener("click", () => {
   UI.theme = UI.theme === "dark" ? "light" : "dark";
   localStorage.setItem("llm24_theme", UI.theme);
@@ -534,7 +512,6 @@ $("btn-theme").addEventListener("click", () => {
 
 (async () => {
   applyTheme();
-  applyI18n();
   const r = await fetch("/api/status");
   const j = await r.json();
   if (!j.spotify_authenticated) {

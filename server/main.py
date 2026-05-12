@@ -174,6 +174,19 @@ async def api_settings_put(payload: dict[str, Any]):
     return settings_store.update_settings(payload)
 
 
+# ----- client log forward -----
+
+class ClientLog(BaseModel):
+    level: str = "info"
+    msg: str = ""
+
+
+@app.post("/api/clientlog")
+async def api_clientlog(log: ClientLog):
+    print(f"[client:{log.level}] {log.msg}", flush=True)
+    return {"ok": True}
+
+
 # ----- now playing -----
 
 @app.get("/api/now")

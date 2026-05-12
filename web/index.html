@@ -13,97 +13,96 @@
   <header class="hdr">
     <h1 class="brand">L L M 2 4</h1>
     <div class="status">
-      <button id="btn-lang" class="toggle" title="language">JA</button>
       <button id="btn-theme" class="toggle" title="theme">DARK</button>
       <span id="onair-indicator" class="indicator off">ON AIR</span>
-      <button id="btn-onair" class="btn" data-i18n="start">START</button>
-      <button id="btn-offair" class="btn" hidden data-i18n="stop">STOP</button>
-      <button id="btn-spotify-login" class="btn" hidden data-i18n="spotify_login">SPOTIFY LOGIN</button>
+      <button id="btn-onair" class="btn">START</button>
+      <button id="btn-offair" class="btn" hidden>STOP</button>
+      <button id="btn-spotify-login" class="btn" hidden>SPOTIFY LOGIN</button>
     </div>
   </header>
 
   <main class="grid">
     <section class="cell now-playing">
-      <h2 class="cell-h" data-i18n="now_playing">NOW PLAYING</h2>
+      <h2 class="cell-h">NOW PLAYING</h2>
       <div class="np-art">
         <img id="np-art" alt="" class="art-img" src="">
-        <div id="np-art-fallback" class="art-fb" data-i18n="off_air">— OFF AIR —</div>
+        <div id="np-art-fallback" class="art-fb">— OFF AIR —</div>
       </div>
       <div class="np-meta">
         <div id="np-title" class="np-title">—</div>
         <div id="np-artist" class="np-artist">—</div>
-        <div id="np-state" class="np-state" data-i18n="state_idle">idle</div>
+        <div id="np-state" class="np-state">idle</div>
       </div>
       <div id="subtitle" class="subtitle"></div>
     </section>
 
     <section class="cell mail">
-      <h2 class="cell-h" data-i18n="mail">MAIL</h2>
+      <h2 class="cell-h">MAIL</h2>
       <form id="mail-form" class="mail-form">
         <label class="field">
-          <span data-i18n="radio_name">ラジオネーム</span>
+          <span>Radio Name</span>
           <input id="m-name" type="text" maxlength="60" required>
         </label>
         <label class="field">
-          <span data-i18n="body">本文</span>
+          <span>Message</span>
           <textarea id="m-body" rows="4" maxlength="2000" required></textarea>
         </label>
         <label class="field">
-          <span data-i18n="request">リクエスト (任意)</span>
+          <span>Request (optional)</span>
           <input id="m-request" type="text" maxlength="500">
         </label>
         <label class="check">
           <input id="m-force" type="checkbox">
-          <span data-i18n="force_next">次の曲で必ず反映する</span>
+          <span>Apply to the very next track</span>
         </label>
-        <button class="btn btn-primary" type="submit" data-i18n="submit">投 函</button>
+        <button class="btn btn-primary" type="submit">SEND</button>
         <div id="m-status" class="m-status"></div>
       </form>
     </section>
 
     <section class="cell recent">
-      <h2 class="cell-h" data-i18n="recent">RECENT</h2>
+      <h2 class="cell-h">RECENT</h2>
       <ol id="recent-list" class="recent-list"></ol>
     </section>
 
     <section class="cell settings">
-      <h2 class="cell-h" data-i18n="settings">SETTINGS</h2>
+      <h2 class="cell-h">SETTINGS</h2>
       <details>
-        <summary data-i18n="open_settings">設定を開く</summary>
+        <summary>Open settings</summary>
         <form id="settings-form" class="settings-form">
           <label class="field">
-            <span data-i18n="genres">ジャンル (カンマ区切り)</span>
+            <span>Genres (comma-separated)</span>
             <input id="s-genres" type="text">
           </label>
           <label class="field">
-            <span data-i18n="excl_artists">除外アーティスト (カンマ区切り)</span>
+            <span>Excluded artists (comma-separated)</span>
             <input id="s-excl-art" type="text">
           </label>
           <label class="field">
-            <span data-i18n="personality">性格カスタム</span>
+            <span>Personality custom</span>
             <input id="s-personality" type="text">
           </label>
           <label class="field">
-            <span data-i18n="chat_freq">雑談頻度</span>
+            <span>Chat frequency</span>
             <select id="s-chat-freq">
-              <option value="loose" data-i18n="freq_loose">緩い</option>
-              <option value="normal" selected data-i18n="freq_normal">普通</option>
-              <option value="dense" data-i18n="freq_dense">多め</option>
+              <option value="loose">loose</option>
+              <option value="normal" selected>normal</option>
+              <option value="dense">dense</option>
             </select>
           </label>
           <label class="field">
-            <span data-i18n="mail_adoption">お便り採用率</span>
+            <span>Mail adoption rate</span>
             <select id="s-mail-adopt">
-              <option value="every" data-i18n="adopt_every">毎回</option>
-              <option value="every_few" selected data-i18n="adopt_few">数曲に1回</option>
-              <option value="when_full" data-i18n="adopt_full">溜まったら</option>
+              <option value="every">every track</option>
+              <option value="every_few" selected>every few tracks</option>
+              <option value="when_full">when queue is full</option>
             </select>
           </label>
           <label class="check">
             <input id="s-jingle" type="checkbox" checked>
-            <span data-i18n="jingle_on">時報ジングル ON</span>
+            <span>Time-signal jingle ON</span>
           </label>
-          <button class="btn" type="submit" data-i18n="save">保 存</button>
+          <button class="btn" type="submit">SAVE</button>
           <div id="s-status" class="m-status"></div>
         </form>
       </details>
