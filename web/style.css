@@ -87,8 +87,8 @@ a { color: inherit; }
   display: inline-flex; align-items: center; justify-content: center;
 }
 .seg-btn:hover { background: var(--fg); color: var(--bg); border-color: var(--fg); }
-.seg-btn.primary { border-color: var(--accent); color: var(--accent); }
-.seg-btn.primary:hover { background: var(--accent); color: var(--fg); border-color: var(--accent); }
+.seg-btn:disabled { opacity: 0.4; cursor: wait; }
+.seg-btn.active { background: var(--fg); color: var(--bg); border-color: var(--fg); }
 
 .indicator {
   font-family: "Cinzel", serif;
@@ -114,8 +114,8 @@ a { color: inherit; }
   transition: background 80ms linear, color 80ms linear;
 }
 .btn:hover { background: var(--fg); color: var(--bg); }
-.btn-primary { border-color: var(--accent); color: var(--accent); }
-.btn-primary:hover { background: var(--accent); color: var(--fg); }
+.btn-primary { border-color: var(--fg); color: var(--fg); }
+.btn-primary:hover { background: var(--fg); color: var(--bg); }
 
 /* メイングリッド */
 .grid {
@@ -233,8 +233,8 @@ a { color: inherit; }
   font-weight: 600;
   font-size: 0.7rem;
   letter-spacing: 0.2em;
-  color: var(--accent);
-  border: 2px solid var(--accent);
+  color: var(--dim);
+  border: 2px solid var(--rule);
   padding: 0 0.7rem;
   height: 2.4rem;
   display: inline-flex; align-items: center;

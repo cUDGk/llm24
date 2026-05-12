@@ -147,7 +147,7 @@ async function fetchToken() {
   const r = await fetch("/api/spotify/token");
   if (r.status === 401) {
     $("btn-spotify-login").hidden = false;
-    $("btn-onair").hidden = true;
+    $("btn-toggle").hidden = true;
     return null;
   }
   const j = await r.json();
@@ -237,20 +237,16 @@ async function startOnAir() {
   }
   ST.onAir = true;
   ST.ttsAbort = false;
-  setIndicator(true);
-  $("btn-onair").hidden = true;
-  $("btn-offair").hidden = false;
-  $("np-state").textContent = "on air";
+  setOnAirUI(true);
+  $("np-state").textContent = t("state_on_air");
   loop();
 }
 
 async function stopOnAir() {
   ST.onAir = false;
   ST.ttsAbort = true;
-  setIndicator(false);
-  $("btn-onair").hidden = false;
-  $("btn-offair").hidden = true;
-  $("np-state").textContent = "stopping";
+  setOnAirUI(false);
+  $("np-state").textContent = t("state_stopping");
 
   if (ST.player) {
     for (let v = 1.0; v >= 0; v -= 0.1) {
@@ -616,7 +612,7 @@ async function playStopChime() {
   await sleep(1500);
 }
 
-// ----- UI: indicator
+// ----- UI: indicator + toggle button
 
 function setIndicator(on) {
   const el = $("onair-indicator");
@@ -627,6 +623,15 @@ function setIndicator(on) {
     el.classList.add("off");
     el.classList.remove("on");
   }
+}
+
+function setOnAirUI(on) {
+  setIndicator(on);
+  const btn = $("btn-toggle");
+  btn.textContent = on ? t("stop") : t("start");
+  btn.setAttribute("data-i18n", on ? "stop" : "start");
+  if (on) btn.classList.add("active");
+  else btn.classList.remove("active");
 }
 
 // ----- mail form
@@ -748,8 +753,17 @@ function escapeHtml(s) {
 
 // ----- buttons
 
-$("btn-onair").addEventListener("click", startOnAir);
-$("btn-offair").addEventListener("click", stopOnAir);
+$("btn-toggle").addEventListener("click", async () => {
+  const btn = $("btn-toggle");
+  if (btn.disabled) return;
+  btn.disabled = true;
+  try {
+    if (ST.onAir) await stopOnAir();
+    else await startOnAir();
+  } finally {
+    btn.disabled = false;
+  }
+});
 $("btn-spotify-login").addEventListener("click", () => {
   window.location.href = "/auth/spotify";
 });
@@ -778,7 +792,7 @@ $("btn-lang").addEventListener("click", () => {
   const j = await r.json();
   if (!j.spotify_authenticated) {
     $("btn-spotify-login").hidden = false;
-    $("btn-onair").hidden = true;
+    $("btn-toggle").hidden = true;
   } else {
     // Premium チェック
     try {
