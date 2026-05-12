@@ -158,6 +158,28 @@ a { color: inherit; }
 }
 .art-img.show + .art-fb { display: none; }
 
+.loading {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(0,0,0,0.78);
+  color: var(--accent);
+  font-family: "Cinzel", serif;
+  font-weight: 600;
+  letter-spacing: 0.35em;
+  font-size: 0.85rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease;
+  z-index: 2;
+}
+:root[data-theme="light"] .loading { background: rgba(245,244,241,0.85); }
+.loading.show { opacity: 1; }
+.loading .dots { display: inline-block; min-width: 1.4em; text-align: left; animation: blink 1.2s infinite; }
+@keyframes blink {
+  0%, 100% { opacity: 0.2; }
+  50% { opacity: 1; }
+}
+
 .np-meta { line-height: 1.5; }
 .np-title { font-size: 1.2rem; font-weight: 600; }
 .np-artist { color: var(--dim); font-size: 0.95rem; margin-top: 0.2rem; font-weight: 500; }

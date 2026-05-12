@@ -102,19 +102,10 @@ def _cache_url(path: Path) -> str:
     return f"/cache/{quote(path.name)}"
 
 
-_pool_cache: tuple[float, list[dict]] | None = None
-
-
 async def _build_candidate_pool(settings: dict) -> list[dict]:
     """シードアーティストの top-tracks を合算 + ユーザー top tracks (取れれば) でプール構築。
-    5分キャッシュ。
+    キャッシュなし: 毎回フレッシュに取って多様性を確保する。
     """
-    global _pool_cache
-    import time as _time
-    now_t = _time.time()
-    if _pool_cache and now_t - _pool_cache[0] < 300:
-        return _pool_cache[1]
-
     pool: list[dict] = []
     seen_ids: set[str] = set()
 
@@ -140,7 +131,7 @@ async def _build_candidate_pool(settings: dict) -> list[dict]:
         except spotify.SpotifyError:
             pass
 
-    _pool_cache = (now_t, pool)
+    random.shuffle(pool)
     return pool
 
 

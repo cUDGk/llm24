@@ -204,7 +204,9 @@ async function loop() {
   try {
     while (ST.onAir) {
       try {
+        showLoading(true);
         const r = await fetch("/api/next-segment");
+        showLoading(false);
         if (r.status === 409) {
           console.warn("[loop] server reports not on-air → stopping client loop");
           ST.onAir = false;
@@ -214,16 +216,24 @@ async function loop() {
         const seg = await r.json();
         await playSegment(seg);
       } catch (e) {
+        showLoading(false);
         console.error("[loop] segment error:", e);
         $("np-state").textContent = "error (retry in 3s)";
-        // 3秒、ただしonAir解除されたら即抜ける
         for (let i = 0; i < 15 && ST.onAir; i++) await sleep(200);
       }
     }
   } finally {
     ST.loopRunning = false;
+    showLoading(false);
     console.log("[loop] exited");
   }
+}
+
+function showLoading(on) {
+  const el = $("loading");
+  if (!el) return;
+  if (on) el.classList.add("show");
+  else el.classList.remove("show");
 }
 
 // ----- segment playback
