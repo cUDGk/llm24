@@ -108,6 +108,21 @@
 
 ---
 
+## J. Spotify 実API統合 (`tests/test_spotify_integration.py`)
+
+`data/.spotify_token.json` がある時に実 Spotify Web API を叩いて確認。
+無ければ自動 skip。ブラウザを介さずに Spotify 接続を担保する。
+
+| ID  | 項目                                          | 確認                                          |
+| --- | --------------------------------------------- | --------------------------------------------- |
+| J01 | access_token 取得 (期限切れなら自動refresh)    | `test_get_access_token`                       |
+| J02 | /me プロフィール取得 (product 値あり)          | `test_user_profile_has_product`               |
+| J03 | is_premium() が bool 返す                      | `test_is_premium_returns_bool`                |
+| J04 | アーティスト top tracks (Mrs. GREEN APPLE)     | `test_artist_top_tracks_mrs_green_apple`      |
+| J05 | ジャンル検索 (シティポップ)                    | `test_search_by_genre_returns_tracks`         |
+| J06 | oEmbed で track title + thumbnail              | `test_track_oembed_returns_title`             |
+| J07 | フリーテキスト track 検索                       | `test_search_by_track_query`                  |
+
 ## H. フロント UI (Playwright MCP で対話確認)
 
 | ID  | 項目                                                       | 確認方法                                          |
@@ -126,6 +141,9 @@
 | H12 | リクエスト欄: 非Spotify URLで弾く                            | 不正URL入力 → error 表示                          |
 | H13 | 設定保存 → サーバ反映 → 再読込で保持                        | PUT 200 + GET で値一致                            |
 | H14 | ライトモードのみ (CSS variables = light palette)             | css 読込で `--bg: #f5f4f1`                        |
+| H15 | 設定UIに「推しアーティスト」入力欄あり、保存反映              | `#s-seed-art` 値が PUT/GET で一致                  |
+| H16 | ログイン成功後は SPOTIFY ログイン ボタンが必ず hidden        | `#btn-spotify-login.hidden === true`              |
+| H17 | Claude プロンプトに現在時刻 (年月日時分+曜日) を含む          | `claude_sdk._now_context()` 単体確認              |
 
 ## I. 実ブラウザ確認 (FE手動)
 
@@ -146,5 +164,6 @@ Playwright Chromium では Widevine 非対応のため、以下は実Chrome/Edge
 
 ## 最新実行結果
 
-直近の `pytest tests/ -v` 実行で `54 passed` (実行時間 ~8秒)。
+直近の `pytest tests/ -v` 実行で `61 passed` (実行時間 ~15秒)。
+内訳: A〜G の単体/モック 54件 + J Spotify実API 7件。
 失敗が出たらここに記録して、修正コミットで再実行する。

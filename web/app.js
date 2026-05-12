@@ -79,7 +79,9 @@ const I18N = {
     sent_mails: "投函済み",
     tag_queued: "未読", tag_read: "読了", tag_consumed: "消化",
     recent: "最近の曲", settings: "設定", open_settings: "設定を開く",
-    genres: "ジャンル (カンマ区切り)", excl_artists: "除外アーティスト (カンマ区切り)",
+    genres: "ジャンル (カンマ区切り)",
+    seed_artists: "推しアーティスト (カンマ区切り、空でジャンル選曲のみ)",
+    excl_artists: "除外アーティスト (カンマ区切り)",
     personality: "性格カスタム", chat_freq: "雑談頻度",
     freq_loose: "緩い", freq_normal: "普通", freq_dense: "多め",
     mail_adoption: "お便り採用率",
@@ -105,7 +107,9 @@ const I18N = {
     sent_mails: "SENT MAILS",
     tag_queued: "QUEUED", tag_read: "READ", tag_consumed: "READ",
     recent: "RECENT", settings: "SETTINGS", open_settings: "Open settings",
-    genres: "Genres (comma-separated)", excl_artists: "Excluded artists (comma-separated)",
+    genres: "Genres (comma-separated)",
+    seed_artists: "Seed artists (comma-separated, empty = genre only)",
+    excl_artists: "Excluded artists (comma-separated)",
     personality: "Personality custom", chat_freq: "Chat frequency",
     freq_loose: "loose", freq_normal: "normal", freq_dense: "dense",
     mail_adoption: "Mail adoption rate",
@@ -141,6 +145,9 @@ async function fetchToken() {
     $("btn-toggle").hidden = true;
     return null;
   }
+  // 成功 = 認証済みなのでログインボタンを必ず隠す
+  $("btn-spotify-login").hidden = true;
+  $("btn-toggle").hidden = false;
   const j = await r.json();
   return j.access_token;
 }
@@ -686,6 +693,7 @@ async function loadSettings() {
   const r = await fetch("/api/settings");
   const s = await r.json();
   $("s-genres").value = (s.genres || []).join(", ");
+  $("s-seed-art").value = (s.seed_artists || []).join(", ");
   $("s-excl-art").value = (s.exclude?.artists || []).join(", ");
   $("s-personality").value = s.personality_custom || "";
   $("s-chat-freq").value = s.chat_frequency || "normal";
@@ -697,6 +705,7 @@ $("settings-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const payload = {
     genres: $("s-genres").value.split(",").map((x) => x.trim()).filter(Boolean),
+    seed_artists: $("s-seed-art").value.split(",").map((x) => x.trim()).filter(Boolean),
     exclude: {
       artists: $("s-excl-art").value.split(",").map((x) => x.trim()).filter(Boolean),
       genres: [],

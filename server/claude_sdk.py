@@ -83,6 +83,13 @@ def _extract_json(raw: str) -> dict[str, Any]:
 
 # ---------------------------------------------------------------- 台本系
 
+def _now_context() -> str:
+    from datetime import datetime
+    n = datetime.now()
+    weekday = ["月", "火", "水", "木", "金", "土", "日"][n.weekday()]
+    return f"現在時刻: {n.year}年{n.month}月{n.day}日({weekday}) {n.hour}時{n.minute:02d}分"
+
+
 async def gen_song_intro(
     *,
     persona_desc: str,
@@ -91,10 +98,7 @@ async def gen_song_intro(
     related_mail: dict | None,
     recent_summaries: list[str],
 ) -> dict[str, Any]:
-    """曲振り台本を生成。
-
-    Returns: {"text": str, "summary": str}
-    """
+    """曲振り台本を生成。"""
     mail_part = ""
     if related_mail:
         mail_part = (
@@ -105,6 +109,8 @@ async def gen_song_intro(
 
     summaries = "\n".join(f"- {s}" for s in recent_summaries[:10]) or "(なし)"
     prompt = f"""\
+{_now_context()}
+
 時間帯ペルソナ:
 {persona_desc}
 
@@ -118,6 +124,7 @@ async def gen_song_intro(
 - 約20秒で読める長さ (日本語で 80〜120 文字程度)
 - 「次の曲は◯◯の△△」型を基本としつつ、自然な崩しを混ぜる
 - 過度な情緒・絶賛・煽り禁止
+- 季節・時間帯・曜日に矛盾しない発言にする (上記「現在時刻」に従う)
 - 出力は次のJSONのみ:
 {{"text": "<読み上げ用テキスト>", "summary": "<10〜20文字の要約>"}}
 """
@@ -136,6 +143,8 @@ async def gen_chat(
     plays = "\n".join(f"- {p['artist']} / {p['title']}" for p in last_played[:5]) or "(なし)"
     summaries = "\n".join(f"- {s}" for s in recent_summaries[:10]) or "(なし)"
     prompt = f"""\
+{_now_context()}
+
 時間帯ペルソナ:
 {persona_desc}
 
@@ -156,6 +165,7 @@ async def gen_chat(
 - 約60秒で読める長さ (日本語で 200〜260 文字程度)
 - 句読点で区切り、TTSが息継ぎしやすい構造
 - 同じ話題を繰り返さない
+- 季節・時間帯・曜日と矛盾する発言はしない (上記「現在時刻」に従う)
 - 出力は次のJSONのみ:
 {{"text": "<読み上げ用>", "summary": "<10〜20文字の要約>"}}
 """
@@ -172,6 +182,8 @@ async def gen_mail_reply(
     """お便り読み上げ + DJ反応コメント。"""
     summaries = "\n".join(f"- {s}" for s in recent_summaries[:10]) or "(なし)"
     prompt = f"""\
+{_now_context()}
+
 時間帯ペルソナ:
 {persona_desc}
 
