@@ -2,7 +2,7 @@
 
 24時間稼働する AI DJ ラジオ。台本は Claude Code SDK、TTS は VOICEVOX、再生は Spotify Web Playback SDK。
 
-ローカルで FastAPI を立てて、ブラウザ (Chrome/Edge) で `http://localhost:8000` を開く。
+ローカルで FastAPI を立てて、ブラウザ (Chrome/Edge) で `http://127.0.0.1:8000` を開く。
 
 ## 必要なもの
 
@@ -21,7 +21,7 @@
 2. 「Create app」
    - App name: `LLM24`（任意）
    - App description: 任意
-   - **Redirect URI**: `http://localhost:8000/auth/spotify/callback`
+   - **Redirect URI**: `http://127.0.0.1:8000/auth/spotify/callback`
    - APIs: `Web API` と `Web Playback SDK` をチェック
 3. 作成後、`Client ID` と `Client secret` をコピー
 
@@ -74,12 +74,12 @@ GitHub Release から CPU 解凍版を落として `vendor/voicevox/` に展開�
 python -m server.main
 ```
 
-ブラウザで <http://localhost:8000> を開く → Spotify ログイン → **ON AIR** ボタンで番組開始。
+ブラウザで <http://127.0.0.1:8000> を開く → Spotify ログイン → **ON AIR** ボタンで番組開始。
 
 ## 動作確認チェックリスト
 
 1. **VOICEVOX 起動** (`scripts\run_voicevox.ps1`) → ブラウザで <http://localhost:50021/version> が JSON を返す
-2. **サーバ起動** (`python -m server.main`) → <http://localhost:8000/api/status> が `{"on_air":false,...}` を返す
+2. **サーバ起動** (`python -m server.main`) → <http://127.0.0.1:8000/api/status> が `{"on_air":false,...}` を返す
 3. **Spotify ログイン**: 画面右上 `SPOTIFY LOGIN` ボタンで認証 → 画面に戻ってくる
 4. **お便り投函**: ラジオネーム + 本文を入れて `投函` → DB に保存される (`/api/mail` で確認可)
 5. **ON AIR**: `START` ボタンで番組開始 → 数秒以内に DJ の曲振り → Spotify が曲を再生
