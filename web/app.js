@@ -92,10 +92,18 @@ window.onSpotifyWebPlaybackSDKReady = async () => {
     volume: 1.0,
   });
 
-  ST.player.addListener("ready", ({ device_id }) => {
+  ST.player.addListener("ready", async ({ device_id }) => {
     ST.deviceId = device_id;
     console.log("[spotify] device ready:", device_id);
-    transferPlayback(device_id);
+    try {
+      await fetch("/api/spotify/device", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ device_id }),
+      });
+    } catch (e) {
+      console.error("[spotify] failed to register device on server", e);
+    }
   });
 
   ST.player.addListener("not_ready", ({ device_id }) => {
@@ -296,11 +304,18 @@ async function playSong(step) {
   $("np-title").textContent = step.title;
   $("np-artist").textContent = step.artist;
   $("np-state").textContent = "playing";
+  const img = $("np-art");
   if (step.album_image) {
-    $("np-art").src = step.album_image;
-    $("np-art").classList.add("show");
+    img.onload = () => img.classList.add("show");
+    img.onerror = () => {
+      img.classList.remove("show");
+      console.warn("[ui] album image failed to load:", step.album_image);
+    };
+    img.src = step.album_image;
   } else {
-    $("np-art").classList.remove("show");
+    img.classList.remove("show");
+    img.removeAttribute("src");
+    console.log("[ui] no album_image in step");
   }
   refreshRecent();
 
@@ -320,35 +335,14 @@ async function startSpotifyPlay(uri) {
     console.warn("[spotify] no device_id yet");
     return false;
   }
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const tok = await fetchToken();
-    if (!tok) return false;
-    if (attempt > 0) {
-      // 2回目: デバイス転送して再生強制
-      await transferPlayback(ST.deviceId, false);
-      await sleep(400);
-    }
-    const r = await fetch(
-      `https://api.spotify.com/v1/me/player/play?device_id=${ST.deviceId}`,
-      {
-        method: "PUT",
-        headers: {
-          Authorization: `Bearer ${tok}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ uris: [uri] }),
-      }
-    );
-    if (r.ok || r.status === 204) return true;
-    const body = await r.text();
-    console.warn(`[spotify] play try${attempt + 1} → ${r.status} ${body}`);
-    if (r.status === 404 || r.status === 403 || r.status === 401) {
-      // 404=device not found / 403=Premium必要 or scope不足 / 401=token切れ
-      // 次のループでtransfer+再取得
-      continue;
-    }
-    return false;
-  }
+  const r = await fetch("/api/spotify/play", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ uri }),
+  });
+  if (r.ok) return true;
+  const body = await r.text();
+  console.warn(`[spotify] /api/spotify/play → ${r.status} ${body}`);
   return false;
 }
 

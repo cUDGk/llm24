@@ -174,6 +174,49 @@ async def api_settings_put(payload: dict[str, Any]):
     return settings_store.update_settings(payload)
 
 
+# ----- Spotify playback (server-side proxy so errors land in logs) -----
+
+_client_device_id: str | None = None
+
+
+class DeviceIn(BaseModel):
+    device_id: str
+
+
+class PlayIn(BaseModel):
+    uri: str
+
+
+@app.post("/api/spotify/device")
+async def api_set_device(payload: DeviceIn):
+    global _client_device_id
+    _client_device_id = payload.device_id
+    print(f"[spotify] client device registered: {_client_device_id}", flush=True)
+    try:
+        await spotify.transfer_playback(payload.device_id, play=False)
+    except spotify.SpotifyError as e:
+        print(f"[spotify] transfer warn: {e}", flush=True)
+    return {"ok": True}
+
+
+@app.post("/api/spotify/play")
+async def api_spotify_play(payload: PlayIn):
+    if not _client_device_id:
+        raise HTTPException(400, "no client device registered yet")
+    try:
+        try:
+            await spotify.play_uri(_client_device_id, payload.uri)
+        except spotify.SpotifyError as e1:
+            # 一旦転送し直してから再生
+            print(f"[spotify] play try1 failed: {e1}. transferring and retrying", flush=True)
+            await spotify.transfer_playback(_client_device_id, play=False)
+            await spotify.play_uri(_client_device_id, payload.uri)
+    except spotify.SpotifyError as e:
+        print(f"[spotify] play final fail: {e}", flush=True)
+        raise HTTPException(502, str(e)) from e
+    return {"ok": True}
+
+
 # ----- client log forward -----
 
 class ClientLog(BaseModel):
