@@ -17,6 +17,7 @@ data/llm24.db-shm
 data/cache/*
 !data/cache/.gitkeep
 data/settings.json
+data/.spotify_token.json
 
 # Vendor (VOICEVOX runtime, too large for git)
 vendor/voicevox/
