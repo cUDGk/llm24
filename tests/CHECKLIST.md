@@ -144,6 +144,8 @@
 | H15 | 設定UIに「推しアーティスト」入力欄あり、保存反映              | `#s-seed-art` 値が PUT/GET で一致                  |
 | H16 | ログイン成功後は SPOTIFY ログイン ボタンが必ず hidden        | `#btn-spotify-login.hidden === true`              |
 | H17 | Claude プロンプトに現在時刻 (年月日時分+曜日) を含む          | `claude_sdk._now_context()` 単体確認              |
+| H18 | ページ全体スクロールなし (`body.scrollHeight == window.innerHeight`) | playwright evaluate で `bodyScrollable: false`     |
+| H19 | カラム内は overflow-y: auto で個別スクロール                  | cell ごとの scrollHeight 確認                       |
 
 ## I. 実ブラウザ確認 (FE手動)
 
