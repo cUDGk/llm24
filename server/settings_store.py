@@ -30,22 +30,13 @@ DEFAULTS: dict[str, Any] = {
         "noon": 11,
         "evening": 53,
     },
-    # Spotify公式チャートプレイリストは2024-11以降、新規アプリで 403 になる仕様に変更。
-    # 代わりに「シードアーティスト」一覧の top tracks を合算してプール化する。
-    "seed_artists": [
-        "Mrs. GREEN APPLE",
-        "King Gnu",
-        "Yorushika",
-        "YOASOBI",
-        "Vaundy",
-        "Official髭男dism",
-        "Kenshi Yonezu",
-        "Aimer",
-        "Ado",
-        "sakanaction",
-        "BUMP OF CHICKEN",
-        "RADWIMPS",
-    ],
+    # 推しアーティスト。空ならジャンル設定のみで選曲。
+    # 何か入れるとそのアーティストの曲がプールに優先的に混ざる。
+    "seed_artists": [],
+    # 自分の Spotify Top Tracks をプールに混ぜるか。
+    # off にしておくとジャンル/シードアーティスト指定だけで構成され、
+    # 慣れた "ヒット曲" の混入を抑えられる。
+    "use_user_top": False,
 }
 
 

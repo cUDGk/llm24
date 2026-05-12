@@ -104,14 +104,15 @@ def _cache_url(path: Path) -> str:
 
 async def _build_candidate_pool(settings: dict) -> list[dict]:
     """候補プール構築。並列取得 (キャッシュあり)。
-    ソース:
-      A. settings.genres (ジャンル名) で /search → 同ジャンル想定の曲
-      B. settings.seed_artists (アーティスト名) で /search → 推し系の曲
-      C. /me/top/tracks (取れれば) → ユーザーの好み
+    ソース (空のセクションはスキップ):
+      A. settings.genres (ジャンル名) で /search
+      B. settings.seed_artists (アーティスト名) で /search
+      C. /me/top/tracks (settings.use_user_top=True の時のみ)
     プールはランダムシャッフル。
     """
     genres = settings.get("genres", []) or []
     seeds = settings.get("seed_artists", []) or []
+    use_top = bool(settings.get("use_user_top", False))
 
     async def _safe_genre(g: str) -> list[dict]:
         try:
@@ -131,21 +132,24 @@ async def _build_candidate_pool(settings: dict) -> list[dict]:
         except spotify.SpotifyError:
             return []
 
-    genre_task = asyncio.gather(*(_safe_genre(g) for g in genres))
-    artist_task = asyncio.gather(*(_safe_artist(n) for n in seeds))
-    top_task = asyncio.gather(_safe_top("medium_term"), _safe_top("short_term"))
-    genre_results, artist_results, top_results = await asyncio.gather(
-        genre_task, artist_task, top_task
-    )
+    tasks = [
+        asyncio.gather(*(_safe_genre(g) for g in genres)),
+        asyncio.gather(*(_safe_artist(n) for n in seeds)),
+    ]
+    if use_top:
+        tasks.append(asyncio.gather(_safe_top("medium_term"), _safe_top("short_term")))
+
+    results = await asyncio.gather(*tasks)
 
     pool: list[dict] = []
     seen_ids: set[str] = set()
-    for tracks in genre_results + artist_results + top_results:
-        for t in tracks:
-            if t["id"] in seen_ids:
-                continue
-            seen_ids.add(t["id"])
-            pool.append(t)
+    for group in results:
+        for tracks in group:
+            for t in tracks:
+                if t["id"] in seen_ids:
+                    continue
+                seen_ids.add(t["id"])
+                pool.append(t)
 
     random.shuffle(pool)
     return pool
