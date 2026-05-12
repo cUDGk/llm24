@@ -1,0 +1,200 @@
+"""FastAPI エントリポイント。
+
+エンドポイント:
+- GET  /                       → index.html
+- GET  /static/*               → CSS/JS
+- GET  /assets/*               → ジングル素材
+- GET  /cache/<file>           → 生成済みTTS WAV
+- GET  /auth/spotify           → Spotify認可URLへリダイレクト
+- GET  /auth/spotify/callback  → 認可コード受領→トークン保存→ /へ
+- GET  /api/status             → サーバ状態
+- GET  /api/spotify/token      → 現在の access_token (Web Playback SDK用)
+- POST /api/onair              → 番組開始
+- POST /api/offair             → 番組停止
+- GET  /api/next-segment       → 次のセグメント取得
+- POST /api/mail               → お便り投稿
+- GET  /api/mail               → お便り一覧
+- GET  /api/settings           → 現在設定
+- PUT  /api/settings           → 設定更新
+- GET  /api/now                → 今再生中の曲・最近の曲
+"""
+
+from __future__ import annotations
+
+import secrets
+from contextlib import asynccontextmanager
+from pathlib import Path
+from typing import Any
+
+import uvicorn
+from fastapi import FastAPI, Form, HTTPException, Query, Request
+from fastapi.responses import (
+    FileResponse,
+    HTMLResponse,
+    JSONResponse,
+    RedirectResponse,
+)
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from . import db, scheduler, settings_store, spotify
+from .config import (
+    ASSETS_DIR,
+    CACHE_DIR,
+    LLM24_HOST,
+    LLM24_PORT,
+    WEB_DIR,
+)
+
+
+_oauth_state_store: set[str] = set()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await db.init_db()
+    yield
+
+
+app = FastAPI(title="LLM24", lifespan=lifespan)
+
+app.mount("/static", StaticFiles(directory=str(WEB_DIR)), name="static")
+app.mount("/assets", StaticFiles(directory=str(ASSETS_DIR)), name="assets")
+app.mount("/cache", StaticFiles(directory=str(CACHE_DIR)), name="cache")
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    idx = WEB_DIR / "index.html"
+    return FileResponse(idx)
+
+
+# ----- Spotify OAuth -----
+
+@app.get("/auth/spotify")
+async def auth_spotify():
+    state = secrets.token_urlsafe(16)
+    _oauth_state_store.add(state)
+    return RedirectResponse(spotify.authorize_url(state))
+
+
+@app.get("/auth/spotify/callback")
+async def auth_callback(code: str | None = None, state: str | None = None, error: str | None = None):
+    if error:
+        return HTMLResponse(f"<h1>Spotify認証エラー</h1><p>{error}</p>", status_code=400)
+    if not code or not state or state not in _oauth_state_store:
+        return HTMLResponse("<h1>不正な認証コールバック</h1>", status_code=400)
+    _oauth_state_store.discard(state)
+    try:
+        await spotify.exchange_code(code)
+    except spotify.SpotifyError as e:
+        return HTMLResponse(f"<h1>トークン交換失敗</h1><pre>{e}</pre>", status_code=500)
+    return RedirectResponse("/")
+
+
+@app.get("/api/spotify/token")
+async def spotify_token():
+    if not spotify.is_authenticated():
+        raise HTTPException(401, "Spotify未認証")
+    try:
+        token = await spotify.get_access_token()
+    except spotify.SpotifyError as e:
+        raise HTTPException(401, str(e)) from e
+    return {"access_token": token}
+
+
+# ----- 番組制御 -----
+
+@app.get("/api/status")
+async def api_status():
+    return {
+        "on_air": scheduler.state().started,
+        "spotify_authenticated": spotify.is_authenticated(),
+        "idx": scheduler.state().idx,
+    }
+
+
+@app.post("/api/onair")
+async def api_onair():
+    if not spotify.is_authenticated():
+        raise HTTPException(401, "先にSpotifyログインが必要")
+    await scheduler.start()
+    return {"ok": True, "on_air": True}
+
+
+@app.post("/api/offair")
+async def api_offair():
+    await scheduler.stop()
+    return {"ok": True, "on_air": False}
+
+
+@app.get("/api/next-segment")
+async def api_next_segment():
+    try:
+        seg = await scheduler.next_segment()
+    except RuntimeError as e:
+        raise HTTPException(409, str(e)) from e
+    return seg
+
+
+# ----- お便り -----
+
+class MailIn(BaseModel):
+    radio_name: str = Field(..., min_length=1, max_length=60)
+    body: str = Field(..., min_length=1, max_length=2000)
+    request: str | None = Field(default=None, max_length=500)
+    force: bool = False
+
+
+@app.post("/api/mail")
+async def api_mail_post(mail: MailIn):
+    mid = await db.add_mail(
+        radio_name=mail.radio_name.strip(),
+        body=mail.body.strip(),
+        request=(mail.request or "").strip() or None,
+        force=mail.force,
+    )
+    return {"id": mid, "ok": True}
+
+
+@app.get("/api/mail")
+async def api_mail_list(status: str | None = None, limit: int = 50):
+    return await db.list_mails(status=status, limit=limit)
+
+
+# ----- 設定 -----
+
+@app.get("/api/settings")
+async def api_settings_get():
+    return settings_store.load_settings()
+
+
+@app.put("/api/settings")
+async def api_settings_put(payload: dict[str, Any]):
+    return settings_store.update_settings(payload)
+
+
+# ----- now playing -----
+
+@app.get("/api/now")
+async def api_now():
+    plays = await db.recent_plays(limit=10)
+    cur = plays[0] if plays else None
+    return {
+        "current": cur,
+        "recent": plays[1:6] if len(plays) > 1 else [],
+    }
+
+
+def main():
+    uvicorn.run(
+        "server.main:app",
+        host=LLM24_HOST,
+        port=LLM24_PORT,
+        reload=False,
+        log_level="info",
+    )
+
+
+if __name__ == "__main__":
+    main()

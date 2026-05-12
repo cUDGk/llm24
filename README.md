@@ -76,6 +76,21 @@ python -m server.main
 
 ブラウザで <http://localhost:8000> を開く → Spotify ログイン → **ON AIR** ボタンで番組開始。
 
+## 動作確認チェックリスト
+
+1. **VOICEVOX 起動** (`scripts\run_voicevox.ps1`) → ブラウザで <http://localhost:50021/version> が JSON を返す
+2. **サーバ起動** (`python -m server.main`) → <http://localhost:8000/api/status> が `{"on_air":false,...}` を返す
+3. **Spotify ログイン**: 画面右上 `SPOTIFY LOGIN` ボタンで認証 → 画面に戻ってくる
+4. **お便り投函**: ラジオネーム + 本文を入れて `投函` → DB に保存される (`/api/mail` で確認可)
+5. **ON AIR**: `START` ボタンで番組開始 → 数秒以内に DJ の曲振り → Spotify が曲を再生
+6. **STOP**: `STOP` ボタンで「ピッピッピー」(880Hz × 3) → 停止
+
+## トラブルシュート
+
+- **`ON AIR` を押しても何も起きない**: ブラウザコンソールで `account_error` が出ていれば Spotify Premium 未加入。
+- **Spotify 再生はされるが TTS が出ない**: VOICEVOX が起動していない。`scripts\run_voicevox.ps1` を確認。
+- **Claude SDK で `command not found: claude`**: Claude Code CLI 未インストール。`npm i -g @anthropic-ai/claude-code` か Max サブスクの環境で実行。
+
 ## 仕様
 
 詳細は [`../LLM24_仕様書.md`](../LLM24_仕様書.md) を参照。
