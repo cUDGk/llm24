@@ -57,22 +57,20 @@ for (const lvl of ["warn", "error"]) {
 window.addEventListener("error", (e) => _ship("error", [`window.onerror: ${e.message} @ ${e.filename}:${e.lineno}`]));
 window.addEventListener("unhandledrejection", (e) => _ship("error", [`unhandledrejection: ${e.reason}`]));
 
-// ----- theme & i18n
+// ----- i18n (テーマはダーク固定で切替なし)
 
 const UI = {
-  theme: localStorage.getItem("llm24_theme") || "dark",
   lang: localStorage.getItem("llm24_lang") || "ja",
 };
 
 const I18N = {
   ja: {
     onair_off: "オンエア",
-    theme_dark: "ダーク", theme_light: "ライト",
     start: "開 始", stop: "停 止", spotify_login: "SPOTIFY ログイン",
-    now_playing: t("state_playing"), off_air: "— オフエア —",
+    now_playing: "再生中", off_air: "— オフエア —",
     now_loading: "読み込み中",
-    state_idle: t("state_idle"), state_on_air: t("state_on_air"), state_playing: t("state_playing"),
-    state_stopping: t("state_stopping"), state_error: t("state_error"),
+    state_idle: "停止中", state_on_air: "オンエア中", state_playing: "再生中",
+    state_stopping: "停止しています", state_error: "エラー (3秒後に再試行)",
     next_track: "次の曲",
     mail: "お便り", radio_name: "ラジオネーム", body: "本文",
     track_url: "Spotifyの曲URL (任意)", force_next: "次の曲で必ず反映する",
@@ -132,13 +130,6 @@ function applyI18n() {
   document.documentElement.lang = UI.lang;
   const lb = $("btn-lang");
   if (lb) lb.textContent = UI.lang.toUpperCase();
-  applyTheme(); // テーマボタンのラベルが言語依存
-}
-
-function applyTheme() {
-  document.documentElement.setAttribute("data-theme", UI.theme);
-  const btn = $("btn-theme");
-  if (btn) btn.textContent = UI.theme === "dark" ? t("theme_dark") : t("theme_light");
 }
 
 // ----- token
@@ -768,26 +759,29 @@ $("btn-spotify-login").addEventListener("click", () => {
   window.location.href = "/auth/spotify";
 });
 
-$("btn-theme").addEventListener("click", () => {
-  UI.theme = UI.theme === "dark" ? "light" : "dark";
-  localStorage.setItem("llm24_theme", UI.theme);
-  applyTheme();
-});
-
 $("btn-lang").addEventListener("click", () => {
   UI.lang = UI.lang === "ja" ? "en" : "ja";
   localStorage.setItem("llm24_lang", UI.lang);
   applyI18n();
-  // 動的に書いてるテキストの追従
+  // 動的に書いてる要素も再描画
+  refreshMails();
+  refreshRecent();
+  const ind = $("onair-indicator");
+  if (ind && !ind.classList.contains("on")) {
+    // OFF AIR の表示は indicator の base クラス + on/off で疑似要素なのでテキスト書き換え不要
+  }
+  if ($("premium-warn") && !$("premium-warn").hidden) {
+    $("premium-warn").textContent = t("premium_required");
+  }
   if (ST.onAir) $("np-state").textContent = t("state_on_air");
-  else if (!ST.player) {} else $("np-state").textContent = t("state_idle");
+  else $("np-state").textContent = t("state_idle");
+  setOnAirUI(ST.onAir);
 });
 
 // ----- init
 
 (async () => {
   applyI18n();
-  applyTheme();
   const r = await fetch("/api/status");
   const j = await r.json();
   if (!j.spotify_authenticated) {

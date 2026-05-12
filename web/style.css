@@ -1,15 +1,4 @@
-:root,
-:root[data-theme="dark"] {
-  --bg: #0a0a0a;
-  --fg: #e8e8e8;
-  --rule: #333333;
-  --accent: #6b0f1a;
-  --dim: #888;
-  --art-fb-bg: #111;
-  --dotted: #1f1f1f;
-}
-
-:root[data-theme="light"] {
+:root {
   --bg: #f5f4f1;
   --fg: #1a1a1a;
   --rule: #c8c4bd;
@@ -176,7 +165,7 @@ a { color: inherit; }
 .loading {
   position: absolute; inset: 0;
   display: flex; align-items: center; justify-content: center;
-  background: rgba(0,0,0,0.78);
+  background: rgba(245,244,241,0.85);
   color: var(--accent);
   font-family: "Cinzel", serif;
   font-weight: 600;
@@ -187,7 +176,6 @@ a { color: inherit; }
   transition: opacity 180ms ease;
   z-index: 2;
 }
-:root[data-theme="light"] .loading { background: rgba(245,244,241,0.85); }
 .loading.show { opacity: 1; }
 .loading .dots { display: inline-block; min-width: 1.4em; text-align: left; animation: blink 1.2s infinite; }
 @keyframes blink {
