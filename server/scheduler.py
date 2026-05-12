@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import asyncio
+import random
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -101,46 +102,90 @@ def _cache_url(path: Path) -> str:
     return f"/cache/{quote(path.name)}"
 
 
+async def _pick_from_charts(settings: dict, active_mail: dict | None) -> dict | None:
+    """Spotify公式プレイリストから候補曲を取得して、除外を弾いて1曲ランダム選択。"""
+    playlist_ids = settings.get("chart_playlist_ids", []) or []
+    if not playlist_ids:
+        return None
+
+    locked_ids = await db.recent_spotify_ids(hours=24)
+    recent_plays = await db.recent_plays(limit=20)
+    recent_artists = [r["artist"] for r in recent_plays[:2]]  # 直近2曲のアーティスト
+
+    exclude = settings.get("exclude", {}) or {}
+    ex_artists = {a.lower() for a in exclude.get("artists", [])}
+    ex_keywords = [k.lower() for k in exclude.get("keywords", [])]
+
+    # プレイリストをランダムに1つ選んで取得 (失敗したら他のID試行)
+    ids_shuffled = playlist_ids.copy()
+    random.shuffle(ids_shuffled)
+    candidates: list[dict] = []
+    for pid in ids_shuffled:
+        try:
+            tracks = await spotify.get_playlist_tracks(pid, limit=100)
+        except spotify.SpotifyError:
+            continue
+        candidates = tracks
+        break
+
+    if not candidates:
+        return None
+
+    def ok(t: dict) -> bool:
+        if t["id"] in locked_ids:
+            return False
+        if t["artist"].lower() in ex_artists:
+            return False
+        # 連続同アーティスト2曲制限: 直近2曲のartistと一致したらNG
+        if recent_artists.count(t["artist"]) >= 2:
+            return False
+        hay = (t["artist"] + " " + t["title"]).lower()
+        if any(k in hay for k in ex_keywords if k):
+            return False
+        return True
+
+    pool = [t for t in candidates if ok(t)]
+    if not pool:
+        # 緩めて recent_artists 制限のみ無視
+        pool = [t for t in candidates if t["id"] not in locked_ids]
+    if not pool:
+        return None
+
+    # active_mail でリクエスト指定があれば、それに近い曲を優先選択 (緩い文字列マッチ)
+    if active_mail and (active_mail.get("request") or active_mail.get("body")):
+        query = (active_mail.get("request") or active_mail.get("body")).lower()
+        scored = [
+            (t, 1 if any(q in (t["artist"] + t["title"]).lower() for q in query.split()) else 0)
+            for t in pool
+        ]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        # 上位スコアからランダム選択
+        top_score = scored[0][1]
+        top = [t for t, s in scored if s == top_score]
+        return random.choice(top)
+
+    return random.choice(pool)
+
+
 async def _build_song_segment(
     settings: dict,
     now: datetime,
     active_mail: dict | None = None,
     mail_intro_text: str | None = None,
 ) -> dict[str, Any]:
-    """通常の曲振り or お便り絡みの曲振り。"""
+    """通常の曲振り or お便り絡みの曲振り。
+
+    選曲は Spotify 公式チャートプレイリストから取得 → 除外フィルタ → ランダム。
+    Claude は曲振り台本生成のみに使う (選曲の知識が古くてクリスマス曲とか出すため)。
+    """
     p = persona.current_persona(now)
     speaker = _voice_id(settings, p.slot, p.default_speaker_id)
 
-    # 選曲 (最大3回リトライ)
-    track = None
-    chosen = None
-    locked_ids = await db.recent_spotify_ids(hours=24)
-    recent = await db.recent_plays(limit=20)
     summaries = [s["summary"] for s in await db.recent_summaries(limit=30) if s["summary"]]
 
-    for attempt in range(3):
-        try:
-            chosen = await claude_sdk.pick_song(
-                persona_desc=p.description,
-                genres=settings.get("genres", []),
-                excludes=settings.get("exclude", {}),
-                recent=recent,
-                active_mail=active_mail,
-            )
-        except Exception as e:
-            if attempt == 2:
-                raise
-            continue
-        try:
-            track = await spotify.search_track(chosen["artist"], chosen["title"])
-        except spotify.SpotifyError:
-            track = None
-        if track and track["id"] not in locked_ids:
-            break
-        track = None
-
+    track = await _pick_from_charts(settings, active_mail)
     if not track:
-        raise RuntimeError("選曲に3回失敗")
+        raise RuntimeError("チャートからの選曲に失敗 (プレイリストID/Spotify認証を確認)")
 
     # 曲振り台本生成
     intro = await claude_sdk.gen_song_intro(

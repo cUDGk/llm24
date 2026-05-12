@@ -131,15 +131,20 @@ window.onSpotifyWebPlaybackSDKReady = async () => {
   await ST.player.connect();
 };
 
-async function transferPlayback(deviceId) {
-  await fetch("https://api.spotify.com/v1/me/player", {
+async function transferPlayback(deviceId, play = false) {
+  const tok = await fetchToken();
+  if (!tok) return;
+  const r = await fetch("https://api.spotify.com/v1/me/player", {
     method: "PUT",
     headers: {
-      Authorization: `Bearer ${ST.token}`,
+      Authorization: `Bearer ${tok}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ device_ids: [deviceId], play: false }),
+    body: JSON.stringify({ device_ids: [deviceId], play }),
   });
+  if (!r.ok && r.status !== 204) {
+    console.warn("[spotify] transfer:", r.status, await r.text());
+  }
 }
 
 // ----- on/off air loop
@@ -215,23 +220,41 @@ async function playSegment(seg) {
   for (const step of seg.steps || []) {
     if (!step) continue;
     if (!ST.onAir) return;
-    if (step.type === "jingle" || step.type === "tts") {
-      await playSampleUrl(step.url, { duck: step.ducking === "intro" });
+    if (step.type === "jingle") {
+      await playSampleUrl(step.url, { duck: false, text: "" });
+    } else if (step.type === "tts") {
+      await playSampleUrl(step.url, {
+        duck: step.ducking === "intro",
+        text: step.text || "",
+      });
     } else if (step.type === "song") {
       await playSong(step);
     }
   }
 }
 
-async function playSampleUrl(url, { duck = false } = {}) {
+async function playSampleUrl(url, { duck = false, text = "" } = {}) {
   const buf = await fetchAudioBuffer(url);
   if (duck && ST.player) {
     try { await ST.player.setVolume(0.25); } catch {}
   }
+  if (text) showSubtitle(text);
   await playBuffer(buf);
+  hideSubtitle();
   if (duck && ST.player) {
     try { await ST.player.setVolume(1.0); } catch {}
   }
+}
+
+function showSubtitle(text) {
+  const el = $("subtitle");
+  el.textContent = text;
+  // 一度フェードアウト → テキスト差し替え → フェードイン
+  requestAnimationFrame(() => el.classList.add("show"));
+}
+
+function hideSubtitle() {
+  $("subtitle").classList.remove("show");
 }
 
 async function fetchAudioBuffer(url) {
@@ -277,22 +300,52 @@ async function playSong(step) {
   }
   refreshRecent();
 
-  const playRes = await fetch(
-    `https://api.spotify.com/v1/me/player/play?device_id=${ST.deviceId}`,
-    {
-      method: "PUT",
-      headers: {
-        Authorization: `Bearer ${ST.token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ uris: [step.spotify_uri] }),
-    }
-  );
-  if (!playRes.ok) {
-    console.warn("spotify play failed:", playRes.status, await playRes.text());
+  const ok = await startSpotifyPlay(step.spotify_uri);
+  if (!ok) {
+    console.error("[spotify] could not play song; skipping to next");
+    $("np-state").textContent = "spotify error";
+    await sleep(2000);
+    return;
   }
 
   await waitSongEnd(step.duration_ms);
+}
+
+async function startSpotifyPlay(uri) {
+  if (!ST.deviceId) {
+    console.warn("[spotify] no device_id yet");
+    return false;
+  }
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const tok = await fetchToken();
+    if (!tok) return false;
+    if (attempt > 0) {
+      // 2回目: デバイス転送して再生強制
+      await transferPlayback(ST.deviceId, false);
+      await sleep(400);
+    }
+    const r = await fetch(
+      `https://api.spotify.com/v1/me/player/play?device_id=${ST.deviceId}`,
+      {
+        method: "PUT",
+        headers: {
+          Authorization: `Bearer ${tok}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ uris: [uri] }),
+      }
+    );
+    if (r.ok || r.status === 204) return true;
+    const body = await r.text();
+    console.warn(`[spotify] play try${attempt + 1} → ${r.status} ${body}`);
+    if (r.status === 404 || r.status === 403 || r.status === 401) {
+      // 404=device not found / 403=Premium必要 or scope不足 / 401=token切れ
+      // 次のループでtransfer+再取得
+      continue;
+    }
+    return false;
+  }
+  return false;
 }
 
 function waitSongEnd(durationMs) {

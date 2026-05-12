@@ -165,6 +165,21 @@ a { color: inherit; }
   color: var(--accent);
 }
 
+.subtitle {
+  margin-top: 1.2rem;
+  padding: 0.9rem 1rem;
+  border-left: 2px solid var(--accent);
+  font-size: 0.95rem;
+  line-height: 1.7;
+  color: var(--fg);
+  min-height: 4.2rem;
+  opacity: 0;
+  transition: opacity 350ms ease;
+  font-weight: 400;
+  letter-spacing: 0.04em;
+}
+.subtitle.show { opacity: 1; }
+
 /* MAIL */
 .mail-form { display: flex; flex-direction: column; gap: 0.8rem; }
 .field { display: flex; flex-direction: column; gap: 0.3rem; }

@@ -18,7 +18,7 @@ _lock = RLock()
 DEFAULTS: dict[str, Any] = {
     "dj_name": {"common": "LLM24 DJ"},
     "genres": ["J-POP", "シティポップ", "邦楽ロック", "洋楽オルタナ"],
-    "exclude": {"artists": [], "genres": [], "keywords": []},
+    "exclude": {"artists": [], "genres": [], "keywords": ["クリスマス", "christmas", "xmas"]},
     "personality_custom": "",
     "chat_frequency": "normal",  # loose / normal / dense
     "mail_adoption": "every_few",  # every / every_few / when_full
@@ -30,6 +30,14 @@ DEFAULTS: dict[str, Any] = {
         "noon": 11,
         "evening": 53,
     },
+    # Spotify公式プレイリストID。複数指定可、毎回ランダムに1つから選ぶ。
+    # 37i9dQZEVXbKqiTGXuCOsB = Top 50 - Japan
+    # 37i9dQZEVXbMDoHDwVN2tF = Top 50 - Global
+    # 37i9dQZF1DXcBWIGoYBM5M = Today's Top Hits
+    "chart_playlist_ids": [
+        "37i9dQZEVXbKqiTGXuCOsB",
+        "37i9dQZEVXbMDoHDwVN2tF",
+    ],
 }
 
 

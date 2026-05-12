@@ -169,6 +169,53 @@ async def search_track(artist: str, title: str) -> dict | None:
         }
 
 
+async def get_playlist_tracks(playlist_id: str, limit: int = 100) -> list[dict]:
+    """公式プレイリストから曲一覧を取得。"""
+    token = await get_access_token()
+    out: list[dict] = []
+    offset = 0
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        while len(out) < limit:
+            r = await client.get(
+                f"https://api.spotify.com/v1/playlists/{playlist_id}/tracks",
+                params={
+                    "limit": min(50, limit - len(out)),
+                    "offset": offset,
+                    "market": "JP",
+                    "fields": "items(track(id,uri,name,artists(name),album(images),duration_ms,popularity)),next",
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if r.status_code != 200:
+                raise SpotifyError(
+                    f"playlist {playlist_id} fetch failed: {r.status_code} {r.text}"
+                )
+            data = r.json()
+            for it in data.get("items", []):
+                tr = it.get("track")
+                if not tr or not tr.get("id"):
+                    continue
+                out.append(
+                    {
+                        "id": tr["id"],
+                        "uri": tr["uri"],
+                        "artist": ", ".join(a["name"] for a in tr["artists"]),
+                        "title": tr["name"],
+                        "duration_ms": tr["duration_ms"],
+                        "popularity": tr.get("popularity"),
+                        "album_image": (
+                            tr["album"]["images"][0]["url"]
+                            if tr["album"]["images"]
+                            else None
+                        ),
+                    }
+                )
+            if not data.get("next"):
+                break
+            offset += 50
+    return out
+
+
 async def transfer_playback(device_id: str, play: bool = False) -> None:
     """Web Playback SDK の device に再生制御権を渡す。"""
     token = await get_access_token()
