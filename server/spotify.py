@@ -33,6 +33,7 @@ SCOPES = [
     "user-modify-playback-state",
     "user-read-playback-state",
     "user-read-currently-playing",
+    "user-top-read",
 ]
 
 
@@ -167,6 +168,70 @@ async def search_track(artist: str, title: str) -> dict | None:
             "popularity": top.get("popularity"),
             "album_image": (top["album"]["images"][0]["url"] if top["album"]["images"] else None),
         }
+
+
+def _normalize_track(tr: dict) -> dict:
+    return {
+        "id": tr["id"],
+        "uri": tr["uri"],
+        "artist": ", ".join(a["name"] for a in tr["artists"]),
+        "title": tr["name"],
+        "duration_ms": tr["duration_ms"],
+        "popularity": tr.get("popularity"),
+        "album_image": (tr["album"]["images"][0]["url"] if tr["album"]["images"] else None),
+    }
+
+
+async def get_artist_top_tracks(artist_name: str, market: str = "JP") -> list[dict]:
+    """アーティスト名で track 検索 (人気順)。
+    Spotify は 2024-11 以降、/artists/{id}/top-tracks を新規アプリで 403 にしたので、
+    /search?type=track&q=artist:"NAME" で代替する。
+    """
+    token = await get_access_token()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(
+            "https://api.spotify.com/v1/search",
+            params={"q": f'artist:"{artist_name}"', "type": "track", "limit": 10, "market": market},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if r.status_code != 200:
+            raise SpotifyError(f"artist track search failed: {r.status_code} {r.text}")
+        items = r.json().get("tracks", {}).get("items", [])
+        return [_normalize_track(t) for t in items if t and t.get("id")]
+
+
+async def get_top_tracks(time_range: str = "medium_term", limit: int = 50) -> list[dict]:
+    """ユーザー自身の聴取履歴ベースの top tracks。
+    time_range: short_term (4w) / medium_term (6m) / long_term (~all)
+    """
+    token = await get_access_token()
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.get(
+            "https://api.spotify.com/v1/me/top/tracks",
+            params={"limit": limit, "time_range": time_range},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if r.status_code != 200:
+            raise SpotifyError(f"top tracks failed: {r.status_code} {r.text}")
+        return [_normalize_track(t) for t in r.json().get("items", [])]
+
+
+async def search_recent(year_range: str = "2024-2026", limit: int = 10, query_extra: str = "") -> list[dict]:
+    """Search API で年代指定。403対象外 → 公式プレイリスト代替。"""
+    token = await get_access_token()
+    q = f"year:{year_range}"
+    if query_extra:
+        q = f"{query_extra} {q}"
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        r = await client.get(
+            "https://api.spotify.com/v1/search",
+            params={"q": q, "type": "track", "limit": limit, "market": "JP"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if r.status_code != 200:
+            raise SpotifyError(f"search failed: {r.status_code} {r.text}")
+        items = r.json().get("tracks", {}).get("items", [])
+        return [_normalize_track(t) for t in items if t and t.get("id")]
 
 
 async def get_playlist_tracks(playlist_id: str, limit: int = 100) -> list[dict]:

@@ -102,32 +102,59 @@ def _cache_url(path: Path) -> str:
     return f"/cache/{quote(path.name)}"
 
 
-async def _pick_from_charts(settings: dict, active_mail: dict | None) -> dict | None:
-    """Spotify公式プレイリストから候補曲を取得して、除外を弾いて1曲ランダム選択。"""
-    playlist_ids = settings.get("chart_playlist_ids", []) or []
-    if not playlist_ids:
-        return None
+_pool_cache: tuple[float, list[dict]] | None = None
 
+
+async def _build_candidate_pool(settings: dict) -> list[dict]:
+    """シードアーティストの top-tracks を合算 + ユーザー top tracks (取れれば) でプール構築。
+    5分キャッシュ。
+    """
+    global _pool_cache
+    import time as _time
+    now_t = _time.time()
+    if _pool_cache and now_t - _pool_cache[0] < 300:
+        return _pool_cache[1]
+
+    pool: list[dict] = []
+    seen_ids: set[str] = set()
+
+    def add(tracks: list[dict]):
+        for t in tracks:
+            if t["id"] in seen_ids:
+                continue
+            seen_ids.add(t["id"])
+            pool.append(t)
+
+    # 1) シードアーティスト top tracks
+    seeds = settings.get("seed_artists", []) or []
+    for name in seeds:
+        try:
+            add(await spotify.get_artist_top_tracks(name))
+        except spotify.SpotifyError:
+            continue
+
+    # 2) ユーザー top tracks (scope があれば成功、無ければスキップ)
+    for tr in ("medium_term", "short_term"):
+        try:
+            add(await spotify.get_top_tracks(time_range=tr, limit=50))
+        except spotify.SpotifyError:
+            pass
+
+    _pool_cache = (now_t, pool)
+    return pool
+
+
+async def _pick_from_charts(settings: dict, active_mail: dict | None) -> dict | None:
+    """候補プール (top tracks + 検索) から除外を弾いて1曲ランダム選択。"""
     locked_ids = await db.recent_spotify_ids(hours=24)
     recent_plays = await db.recent_plays(limit=20)
-    recent_artists = [r["artist"] for r in recent_plays[:2]]  # 直近2曲のアーティスト
+    recent_artists = [r["artist"] for r in recent_plays[:2]]
 
     exclude = settings.get("exclude", {}) or {}
     ex_artists = {a.lower() for a in exclude.get("artists", [])}
     ex_keywords = [k.lower() for k in exclude.get("keywords", [])]
 
-    # プレイリストをランダムに1つ選んで取得 (失敗したら他のID試行)
-    ids_shuffled = playlist_ids.copy()
-    random.shuffle(ids_shuffled)
-    candidates: list[dict] = []
-    for pid in ids_shuffled:
-        try:
-            tracks = await spotify.get_playlist_tracks(pid, limit=100)
-        except spotify.SpotifyError:
-            continue
-        candidates = tracks
-        break
-
+    candidates = await _build_candidate_pool(settings)
     if not candidates:
         return None
 

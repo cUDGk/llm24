@@ -30,13 +30,21 @@ DEFAULTS: dict[str, Any] = {
         "noon": 11,
         "evening": 53,
     },
-    # Spotify公式プレイリストID。複数指定可、毎回ランダムに1つから選ぶ。
-    # 37i9dQZEVXbKqiTGXuCOsB = Top 50 - Japan
-    # 37i9dQZEVXbMDoHDwVN2tF = Top 50 - Global
-    # 37i9dQZF1DXcBWIGoYBM5M = Today's Top Hits
-    "chart_playlist_ids": [
-        "37i9dQZEVXbKqiTGXuCOsB",
-        "37i9dQZEVXbMDoHDwVN2tF",
+    # Spotify公式チャートプレイリストは2024-11以降、新規アプリで 403 になる仕様に変更。
+    # 代わりに「シードアーティスト」一覧の top tracks を合算してプール化する。
+    "seed_artists": [
+        "Mrs. GREEN APPLE",
+        "King Gnu",
+        "Yorushika",
+        "YOASOBI",
+        "Vaundy",
+        "Official髭男dism",
+        "Kenshi Yonezu",
+        "Aimer",
+        "Ado",
+        "sakanaction",
+        "BUMP OF CHICKEN",
+        "RADWIMPS",
     ],
 }
 
