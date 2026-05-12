@@ -103,6 +103,21 @@ async def spotify_token():
     return {"access_token": token}
 
 
+@app.get("/api/spotify/profile")
+async def api_spotify_profile():
+    if not spotify.is_authenticated():
+        raise HTTPException(401, "Spotify未認証")
+    p = await spotify.get_user_profile()
+    if not p:
+        raise HTTPException(502, "Spotify profile fetch failed")
+    return {
+        "display_name": p.get("display_name"),
+        "product": p.get("product"),
+        "is_premium": p.get("product") == "premium",
+        "country": p.get("country"),
+    }
+
+
 # ----- 番組制御 -----
 
 @app.get("/api/status")
@@ -171,7 +186,10 @@ async def api_settings_get():
 
 @app.put("/api/settings")
 async def api_settings_put(payload: dict[str, Any]):
-    return settings_store.update_settings(payload)
+    updated = settings_store.update_settings(payload)
+    # seed_artists / exclude が変わった場合は artist_tracks キャッシュ無効化
+    await db.cache_invalidate_kind("artist_tracks")
+    return updated
 
 
 # ----- Spotify playback (server-side proxy so errors land in logs) -----

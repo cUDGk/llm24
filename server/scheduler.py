@@ -104,32 +104,33 @@ def _cache_url(path: Path) -> str:
 
 async def _build_candidate_pool(settings: dict) -> list[dict]:
     """シードアーティストの top-tracks を合算 + ユーザー top tracks (取れれば) でプール構築。
-    キャッシュなし: 毎回フレッシュに取って多様性を確保する。
+    API は並列で同時取得 (キャッシュ層が裏にあるので2回目以降は瞬時)。
     """
+    seeds = settings.get("seed_artists", []) or []
+
+    async def _safe_artist(name: str) -> list[dict]:
+        try:
+            return await spotify.get_artist_top_tracks(name)
+        except spotify.SpotifyError:
+            return []
+
+    async def _safe_top(tr: str) -> list[dict]:
+        try:
+            return await spotify.get_top_tracks(time_range=tr, limit=50)
+        except spotify.SpotifyError:
+            return []
+
+    artist_results = await asyncio.gather(*(_safe_artist(n) for n in seeds))
+    top_results = await asyncio.gather(_safe_top("medium_term"), _safe_top("short_term"))
+
     pool: list[dict] = []
     seen_ids: set[str] = set()
-
-    def add(tracks: list[dict]):
+    for tracks in artist_results + top_results:
         for t in tracks:
             if t["id"] in seen_ids:
                 continue
             seen_ids.add(t["id"])
             pool.append(t)
-
-    # 1) シードアーティスト top tracks
-    seeds = settings.get("seed_artists", []) or []
-    for name in seeds:
-        try:
-            add(await spotify.get_artist_top_tracks(name))
-        except spotify.SpotifyError:
-            continue
-
-    # 2) ユーザー top tracks (scope があれば成功、無ければスキップ)
-    for tr in ("medium_term", "short_term"):
-        try:
-            add(await spotify.get_top_tracks(time_range=tr, limit=50))
-        except spotify.SpotifyError:
-            pass
 
     random.shuffle(pool)
     return pool
@@ -341,6 +342,38 @@ async def _build_mail_then_song(settings: dict, now: datetime, mail: dict) -> di
     return await _build_song_segment(settings, now, active_mail=mail, mail_intro_text=reply["text"])
 
 
+FALLBACK_LINES = [
+    "ちょっと回線が詰まっちゃったみたいで、すみません。次の曲、用意できたらまた呼びますね。",
+    "今ちょっと裏でばたついてます。少しだけ待っててください。",
+    "ええっと、機材の調子が一瞬。すぐ戻ります。",
+]
+
+
+async def _build_fallback_segment(settings: dict, now: datetime, reason: str) -> dict[str, Any]:
+    """Claude/Spotify が失敗した時の保険セグメント。沈黙を避けるため短いTTSだけ流す。"""
+    print(f"[scheduler] fallback segment: {reason}", flush=True)
+    p = persona.current_persona(now)
+    speaker = _voice_id(settings, p.slot, p.default_speaker_id)
+    text = random.choice(FALLBACK_LINES)
+    try:
+        tts_path = await voicevox.synthesize(text, speaker)
+        return {
+            "kind": "fallback",
+            "persona": p.slot,
+            "steps": [{"type": "tts", "url": _cache_url(tts_path), "text": text}],
+            "next_song": None,
+        }
+    except Exception as e:
+        # VOICEVOX も死んでたらせめて空 segment を返す (フロントが即next-segmentする)
+        print(f"[scheduler] fallback TTS also failed: {e}", flush=True)
+        return {
+            "kind": "fallback",
+            "persona": p.slot,
+            "steps": [],
+            "next_song": None,
+        }
+
+
 # ---- public ----
 
 async def next_segment() -> dict[str, Any]:
@@ -350,25 +383,33 @@ async def next_segment() -> dict[str, Any]:
         now = datetime.now()
         settings = load_settings()
 
-        # 1. 時報判定
-        if _should_play_time_signal(now):
-            return await _build_time_signal(now, settings)
+        try:
+            return await _next_segment_inner(settings, now)
+        except RuntimeError:
+            raise
+        except Exception as e:
+            return await _build_fallback_segment(settings, now, repr(e))
 
-        # 2. お便り判定 (force/通常)
-        mail = await mail_queue.pick_next_mail(
-            settings.get("mail_adoption", "every_few"),
-            _state.last_mail_idx,
-            _state.idx,
-        )
-        if mail:
-            return await _build_mail_then_song(settings, now, mail)
 
-        # 3. 雑談頻度に応じてたまに雑談を挟む
-        freq = settings.get("chat_frequency", "normal")
-        gap = {"loose": 6, "normal": 4, "dense": 2}.get(freq, 4)
-        if _state.idx - _state.last_chat_at_idx >= gap:
-            chat = await _build_chat_segment(settings, now)
-            return chat
+async def _next_segment_inner(settings: dict, now: datetime) -> dict[str, Any]:
+    # 1. 時報判定
+    if _should_play_time_signal(now):
+        return await _build_time_signal(now, settings)
 
-        # 4. 通常の曲振り
-        return await _build_song_segment(settings, now)
+    # 2. お便り判定 (force/通常)
+    mail = await mail_queue.pick_next_mail(
+        settings.get("mail_adoption", "every_few"),
+        _state.last_mail_idx,
+        _state.idx,
+    )
+    if mail:
+        return await _build_mail_then_song(settings, now, mail)
+
+    # 3. 雑談頻度に応じてたまに雑談を挟む
+    freq = settings.get("chat_frequency", "normal")
+    gap = {"loose": 6, "normal": 4, "dense": 2}.get(freq, 4)
+    if _state.idx - _state.last_chat_at_idx >= gap:
+        return await _build_chat_segment(settings, now)
+
+    # 4. 通常の曲振り
+    return await _build_song_segment(settings, now)

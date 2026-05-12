@@ -11,11 +11,15 @@ Claude Code Max サブスクの認証を流用して、台本生成と選曲を�
 
 from __future__ import annotations
 
+import asyncio
 import json
 import re
 from typing import Any
 
 from claude_agent_sdk import ClaudeAgentOptions, query
+
+
+CLAUDE_TIMEOUT_SECONDS = 45.0
 
 
 SYSTEM_BASE = """\
@@ -38,8 +42,7 @@ def _build_options(extra_system: str = "") -> ClaudeAgentOptions:
     )
 
 
-async def _ask(prompt: str, system_extra: str = "") -> str:
-    """Claude に1ターン投げてテキストを取り出す。"""
+async def _ask_inner(prompt: str, system_extra: str = "") -> str:
     options = _build_options(system_extra)
     chunks: list[str] = []
     async for message in query(prompt=prompt, options=options):
@@ -55,6 +58,14 @@ async def _ask(prompt: str, system_extra: str = "") -> str:
                 if text:
                     chunks.append(text)
     return "".join(chunks).strip()
+
+
+async def _ask(prompt: str, system_extra: str = "") -> str:
+    """Claude に1ターン投げてテキストを取り出す。タイムアウト付き。"""
+    try:
+        return await asyncio.wait_for(_ask_inner(prompt, system_extra), timeout=CLAUDE_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        raise RuntimeError(f"Claude SDK timed out after {CLAUDE_TIMEOUT_SECONDS}s")
 
 
 def _extract_json(raw: str) -> dict[str, Any]:

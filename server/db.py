@@ -50,6 +50,18 @@ CREATE TABLE IF NOT EXISTS script_history (
 );
 
 CREATE INDEX IF NOT EXISTS idx_script_history_created_at ON script_history(created_at DESC);
+
+-- Spotify API レスポンスキャッシュ。kind ごとに key で保存。
+-- kind: artist_tracks / oembed / search
+CREATE TABLE IF NOT EXISTS spotify_cache (
+    kind        TEXT NOT NULL,
+    key         TEXT NOT NULL,
+    payload     TEXT NOT NULL,
+    expires_at  TEXT NOT NULL,
+    PRIMARY KEY (kind, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_spotify_cache_expires ON spotify_cache(expires_at);
 """
 
 
@@ -168,6 +180,59 @@ async def add_script(kind: str, content: str, summary: str | None) -> int:
         await conn.commit()
         return cur.lastrowid
 
+
+# ---- spotify_cache ----
+
+async def cache_get(kind: str, key: str) -> Any | None:
+    """期限内ならキャッシュ内容を返す。"""
+    import json as _json
+    async with aiosqlite.connect(DB_PATH) as conn:
+        async with conn.execute(
+            "SELECT payload, expires_at FROM spotify_cache WHERE kind = ? AND key = ?",
+            (kind, key),
+        ) as cur:
+            row = await cur.fetchone()
+            if not row:
+                return None
+            payload, exp = row
+            if exp <= _now_iso():
+                return None
+            try:
+                return _json.loads(payload)
+            except _json.JSONDecodeError:
+                return None
+
+
+async def cache_put(kind: str, key: str, value: Any, ttl_seconds: int) -> None:
+    import json as _json
+    from datetime import timedelta
+    expires = (datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)).isoformat()
+    payload = _json.dumps(value, ensure_ascii=False)
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute(
+            "INSERT OR REPLACE INTO spotify_cache(kind, key, payload, expires_at) "
+            "VALUES(?, ?, ?, ?)",
+            (kind, key, payload, expires),
+        )
+        await conn.commit()
+
+
+async def cache_invalidate_kind(kind: str) -> None:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        await conn.execute("DELETE FROM spotify_cache WHERE kind = ?", (kind,))
+        await conn.commit()
+
+
+async def cache_purge_expired() -> int:
+    async with aiosqlite.connect(DB_PATH) as conn:
+        cur = await conn.execute(
+            "DELETE FROM spotify_cache WHERE expires_at <= ?", (_now_iso(),)
+        )
+        await conn.commit()
+        return cur.rowcount
+
+
+# ---- script_history (続き) ----
 
 async def recent_summaries(limit: int = 30) -> list[dict[str, Any]]:
     """直近の台本要約（重複防止に使う）。"""

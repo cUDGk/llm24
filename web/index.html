@@ -14,6 +14,7 @@
     <h1 class="brand">L L M 2 4</h1>
     <div class="status">
       <button id="btn-theme" class="toggle" title="表示モード切替">ダーク</button>
+      <span id="premium-warn" class="premium-warn" hidden>Premium未確認</span>
       <span id="onair-indicator" class="indicator off">オンエア</span>
       <button id="btn-onair" class="btn">開 始</button>
       <button id="btn-offair" class="btn" hidden>停 止</button>
@@ -39,6 +40,11 @@
       </div>
       <div id="progress-text" class="progress-text"></div>
       <div id="subtitle" class="subtitle"></div>
+      <div id="next-up" class="next-up" hidden>
+        <span class="next-label">次の曲</span>
+        <span id="next-title" class="next-title"></span>
+        <span id="next-artist" class="next-artist"></span>
+      </div>
     </section>
 
     <section class="cell mail">

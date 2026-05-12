@@ -132,6 +132,28 @@ def is_authenticated() -> bool:
     return TOKEN_PATH.exists()
 
 
+async def get_user_profile() -> dict | None:
+    """/me で Premium 状態を含むユーザープロファイル取得。"""
+    try:
+        token = await get_access_token()
+    except SpotifyError:
+        return None
+    async with httpx.AsyncClient(timeout=8.0) as client:
+        r = await client.get(
+            "https://api.spotify.com/v1/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if r.status_code != 200:
+            return None
+        return r.json()
+
+
+async def is_premium() -> bool:
+    """Premium 加入か。Web Playback SDK は Premium 必須。"""
+    p = await get_user_profile()
+    return bool(p and p.get("product") == "premium")
+
+
 async def search_track(artist: str, title: str) -> dict | None:
     """artist+title で Spotify track 検索。最も人気のヒットを返す。"""
     token = await get_access_token()
@@ -185,10 +207,12 @@ def parse_track_id(url_or_uri: str) -> str | None:
 
 
 async def get_track_oembed(track_id: str) -> dict | None:
-    """Spotifyの oEmbed エンドポイント (認証不要・制限対象外) で track メタを取得。
-    /tracks/{id} は新規アプリで403になるので、リクエスト曲のタイトル/サムネはここから。
-    返り値例: {"title": "TrackTitle - Artist", "thumbnail_url": "..."}
-    """
+    """Spotifyの oEmbed (認証不要・制限対象外) で track メタを取得。24時間キャッシュ。"""
+    from . import db
+    cached = await db.cache_get("oembed", track_id)
+    if cached is not None:
+        return cached
+
     url = f"https://open.spotify.com/track/{track_id}"
     try:
         async with httpx.AsyncClient(timeout=8.0, follow_redirects=True) as client:
@@ -199,9 +223,12 @@ async def get_track_oembed(track_id: str) -> dict | None:
             )
             if r.status_code != 200:
                 return None
-            return r.json()
+            data = r.json()
     except (httpx.HTTPError, ValueError):
         return None
+
+    await db.cache_put("oembed", track_id, data, ttl_seconds=24 * 3600)
+    return data
 
 
 async def search_by_track_query(query: str, limit: int = 5) -> list[dict]:
@@ -234,10 +261,16 @@ def _normalize_track(tr: dict) -> dict:
 
 
 async def get_artist_top_tracks(artist_name: str, market: str = "JP") -> list[dict]:
-    """アーティスト名で track 検索 (人気順)。
+    """アーティスト名で track 検索 (人気順)。1時間キャッシュ。
     Spotify は 2024-11 以降、/artists/{id}/top-tracks を新規アプリで 403 にしたので、
     /search?type=track&q=artist:"NAME" で代替する。
     """
+    from . import db
+    cache_key = f"{market}:{artist_name}"
+    cached = await db.cache_get("artist_tracks", cache_key)
+    if cached is not None:
+        return cached
+
     token = await get_access_token()
     async with httpx.AsyncClient(timeout=10.0) as client:
         r = await client.get(
@@ -248,7 +281,10 @@ async def get_artist_top_tracks(artist_name: str, market: str = "JP") -> list[di
         if r.status_code != 200:
             raise SpotifyError(f"artist track search failed: {r.status_code} {r.text}")
         items = r.json().get("tracks", {}).get("items", [])
-        return [_normalize_track(t) for t in items if t and t.get("id")]
+        normalized = [_normalize_track(t) for t in items if t and t.get("id")]
+
+    await db.cache_put("artist_tracks", cache_key, normalized, ttl_seconds=3600)
+    return normalized
 
 
 async def get_top_tracks(time_range: str = "medium_term", limit: int = 50) -> list[dict]:

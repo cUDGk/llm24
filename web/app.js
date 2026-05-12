@@ -46,7 +46,8 @@ function _ship(level, args) {
   } catch {}
 }
 
-for (const lvl of ["log", "warn", "error"]) {
+// サーバには warn / error だけ転送 (info ログは負荷になるのでブラウザ内のみ)
+for (const lvl of ["warn", "error"]) {
   const orig = console[lvl].bind(console);
   console[lvl] = (...args) => {
     orig(...args);
@@ -225,14 +226,17 @@ async function loop() {
         // 曲が含まれるセグメントなら、再生中に次の segment を先取りする
         const hasSong = (seg.steps || []).some((s) => s && s.type === "song");
         if (hasSong) {
-          // 曲開始直後 (15秒後を目安) に次セグメントを取りに行く → 曲が鳴ってる間に準備完了
-          setTimeout(() => {
+          setTimeout(async () => {
             if (ST.onAir && !ST.nextSegmentPromise) {
               ST.nextSegmentPromise = fetchNextSegment();
+              // プリフェッチが返ったら次曲プレビュー表示
+              const nextSeg = await ST.nextSegmentPromise;
+              if (nextSeg && nextSeg !== "stopped") showNextUp(nextSeg);
             }
           }, 15000);
         }
 
+        clearNextUp();
         await playSegment(seg);
       } catch (e) {
         showLoading(false);
@@ -273,6 +277,23 @@ function showLoading(on) {
   if (!el) return;
   if (on) el.classList.add("show");
   else el.classList.remove("show");
+}
+
+function showNextUp(seg) {
+  const song = (seg.steps || []).find((s) => s && s.type === "song");
+  const box = $("next-up");
+  if (!song) { box.hidden = true; return; }
+  $("next-title").textContent = song.title || "";
+  $("next-artist").textContent = song.artist ? "/ " + song.artist : "";
+  box.hidden = false;
+}
+
+function clearNextUp() {
+  const box = $("next-up");
+  if (!box) return;
+  box.hidden = true;
+  $("next-title").textContent = "";
+  $("next-artist").textContent = "";
 }
 
 // ----- segment playback
@@ -410,52 +431,50 @@ async function startSpotifyPlay(uri) {
   return false;
 }
 
-function waitSongEnd(durationMs) {
-  // Spotify Player state + 壁時計の両軸監視で、どのケースでも必ず抜ける。
+/** 曲の終了を待つ。3つの終了条件で確実に抜ける:
+ *   (1) Spotify state.position が duration-500ms 以上 (= 曲終端)
+ *   (2) Spotify state.position が一度動いた後、長時間 paused + position=0 (= SDK が曲を自動停止)
+ *   (3) 壁時計で (knownDuration + 3000ms) 超過 (= SDK が応答しない場合のセーフティ)
+ *   (4) 絶対上限 8分 (= duration=0 のリクエスト曲フォールバック)
+ */
+function waitSongEnd(initialDurationMs) {
   return new Promise(async (resolve) => {
-    const startWall = Date.now();
-    let knownDuration = durationMs || 0;
-    let lastPos = -1;
-    let lastChangeAt = Date.now();
-    let initialPosSeen = false;
-    let stateMissCount = 0;
+    const wallStart = Date.now();
+    let knownDuration = initialDurationMs || 0;
+    let positionEverMoved = false;
+    let lastPausedZeroAt = 0;
 
     const finish = () => { updateProgress(0, 0); resolve(); };
 
     while (ST.onAir) {
-      const elapsed = Date.now() - startWall;
+      const elapsed = Date.now() - wallStart;
       let state = null;
       try { state = await ST.player.getCurrentState(); } catch {}
 
       if (state && typeof state.duration === "number" && state.duration > 0) {
-        stateMissCount = 0;
         knownDuration = state.duration;
-        if (!initialPosSeen && state.position > 200) initialPosSeen = true;
-        if (state.position !== lastPos) {
-          lastPos = state.position;
-          lastChangeAt = Date.now();
-        }
         updateProgress(state.position, state.duration);
+        if (state.position > 1000) positionEverMoved = true;
 
-        // (a) position が duration 終端へ到達
+        // (1) 終端到達
         if (state.position >= state.duration - 500) return finish();
-        // (b) 壁時計で duration を 2秒以上超過 (SDK遅延セーフティ)
-        if (elapsed > state.duration + 2000) return finish();
-        // (c) 一度再生開始した後、position=0 で paused になる = 曲終了直後
-        if (initialPosSeen && state.paused && state.position === 0 && Date.now() - lastChangeAt > 2500) return finish();
-        // (d) 一時停止が長過ぎる場合も終了扱い
-        if (state.paused && state.position > 1000 && Date.now() - lastChangeAt > 6000) return finish();
+
+        // (2) 一度動いた後の paused + position=0 が 2.5秒続いたら次曲扱い
+        if (positionEverMoved && state.paused && state.position === 0) {
+          if (!lastPausedZeroAt) lastPausedZeroAt = Date.now();
+          else if (Date.now() - lastPausedZeroAt > 2500) return finish();
+        } else {
+          lastPausedZeroAt = 0;
+        }
       } else {
-        // state が取れない (SDK 一時的応答なし or 想定外停止)
-        stateMissCount += 1;
         updateProgress(elapsed, knownDuration);
-        // duration 既知なら壁時計で判定
-        if (knownDuration > 0 && elapsed >= knownDuration - 400) return finish();
-        // duration 不明で 6分超 → 強制
-        if (knownDuration === 0 && elapsed > 6 * 60 * 1000) return finish();
-        // state 連続取得失敗 10回 (約5秒)
-        if (stateMissCount >= 10 && elapsed > 10_000) return finish();
       }
+
+      // (3) 壁時計でduration超過
+      if (knownDuration > 0 && elapsed > knownDuration + 3000) return finish();
+      // (4) 絶対上限
+      if (elapsed > 8 * 60 * 1000) return finish();
+
       await sleep(500);
     }
     finish();
@@ -665,9 +684,23 @@ $("btn-theme").addEventListener("click", () => {
   if (!j.spotify_authenticated) {
     $("btn-spotify-login").hidden = false;
     $("btn-onair").hidden = true;
+  } else {
+    // Premium チェック
+    try {
+      const pr = await fetch("/api/spotify/profile");
+      if (pr.ok) {
+        const pj = await pr.json();
+        if (!pj.is_premium) {
+          const w = $("premium-warn");
+          w.textContent = "Premium未加入: 再生不可";
+          w.hidden = false;
+          console.warn("[spotify] account is not Premium → playback will fail");
+        }
+      }
+    } catch {}
   }
   await loadSettings();
   await refreshRecent();
   await refreshMails();
-  setInterval(refreshMails, 15000);
+  setInterval(refreshMails, 30000);
 })();
