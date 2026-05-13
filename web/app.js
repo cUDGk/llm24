@@ -272,12 +272,9 @@ async function stopOnAir() {
   $("np-state").textContent = t("state_stopping");
 
   if (ST.player) {
-    for (let v = 1.0; v >= 0; v -= 0.1) {
-      try { await ST.player.setVolume(Math.max(0, v)); } catch {}
-      await sleep(120);
-    }
+    // sine S字で 1.4秒かけてフェードアウト
+    await rampVolume(1.0, 0, 1400, 28);
     try { await ST.player.pause(); } catch {}
-    // 完全停止: SDK を disconnect して Spotify Connect デバイス一覧から消す
     try { await ST.player.disconnect(); } catch {}
     ST.player = null;
     ST.deviceId = null;
@@ -436,13 +433,28 @@ async function playSegment(seg) {
 async function playSampleUrl(url, { duck = false, text = "" } = {}) {
   const buf = await fetchAudioBuffer(url);
   if (duck && ST.player) {
-    try { await ST.player.setVolume(0.25); } catch {}
+    await rampVolume(1.0, 0.25, 250);
   }
   if (text) showSubtitle(text);
   await playBuffer(buf);
   hideSubtitle();
   if (duck && ST.player) {
-    try { await ST.player.setVolume(1.0); } catch {}
+    await rampVolume(0.25, 1.0, 800);
+  }
+}
+
+/** Spotify Player の音量を from → to へ sine ease-in-out で滑らかに変化させる。
+ *  ease 関数: y = 0.5 - 0.5*cos(π * t)  → 始端と終端が緩やかなS字。
+ */
+async function rampVolume(from, to, durationMs, steps = 24) {
+  if (!ST.player) return;
+  const stepMs = Math.max(8, durationMs / steps);
+  for (let i = 1; i <= steps; i++) {
+    const t = i / steps;
+    const eased = 0.5 - 0.5 * Math.cos(Math.PI * t);
+    const v = from + (to - from) * eased;
+    try { await ST.player.setVolume(Math.max(0, Math.min(1, v))); } catch {}
+    await sleep(stepMs);
   }
 }
 
@@ -503,11 +515,10 @@ async function playSong(step) {
     return;
   }
 
-  // 曲開始と同時にイントロ被せ (ダッキング)
+  // 曲開始と同時にイントロ被せ (ダッキング、sineで自然に)
   if (step.intro_tts) {
-    // SDKが完全に曲再生に乗るまで少しだけ待つ (300ms)
     await sleep(300);
-    try { await ST.player.setVolume(0.25); } catch {}
+    await rampVolume(1.0, 0.25, 250);
     showSubtitle(step.intro_tts.text);
     try {
       const buf = await fetchAudioBuffer(step.intro_tts.url);
@@ -516,7 +527,8 @@ async function playSong(step) {
       console.warn("[tts] intro playback failed", e);
     }
     hideSubtitle();
-    try { await ST.player.setVolume(1.0); } catch {}
+    // サイン波 ease-in-out で 800ms かけてフェードイン
+    await rampVolume(0.25, 1.0, 800);
   }
 
   await waitSongEnd(step.duration_ms);
