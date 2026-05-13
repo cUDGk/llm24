@@ -860,26 +860,26 @@ ChipInput.prototype.add = function (value) {
   this._render();
 };
 
-// ジャンル候補パネル: クリックで chip 追加
-const GENRE_OPTIONS = [
-  "j-pop", "j-rock", "j-rap", "j-idol", "anime", "city pop",
-  "shibuya-kei", "visual-kei", "kawaii future bass", "vocaloid",
-  "pop", "rock", "indie", "alternative", "hip-hop", "rap",
-  "r-n-b", "soul", "electronic", "dance", "edm", "house",
-  "techno", "trance", "drum-and-bass", "dubstep", "future-bass",
-  "ambient", "vaporwave", "lo-fi", "jazz", "classical",
-  "country", "folk", "blues", "funk", "disco", "metal", "punk",
-  "reggae", "latin", "k-pop", "afrobeat", "bossa nova",
-  "soundtrack", "hyperpop",
-];
-(function buildGenrePicker() {
+// ジャンルストック (約300) を /static/genres.json から取得し、picker panel に展開。
+// chip 入力に文字を打つと panel が自動展開して該当ジャンルを動的フィルタする。
+let GENRE_OPTIONS = [];
+
+async function buildGenrePicker() {
   const box = $("genre-picker-list");
   if (!box) return;
+  try {
+    const r = await fetch("/static/genres.json");
+    GENRE_OPTIONS = await r.json();
+  } catch (e) {
+    console.warn("[genres] fetch failed", e);
+    return;
+  }
   for (const g of GENRE_OPTIONS) {
     const b = document.createElement("button");
     b.type = "button";
     b.className = "picker-chip";
     b.textContent = g;
+    b.dataset.genre = g.toLowerCase();
     b.addEventListener("click", () => {
       ST.chipInputs.genres.add(g);
       b.classList.add("added");
@@ -887,7 +887,30 @@ const GENRE_OPTIONS = [
     });
     box.appendChild(b);
   }
-})();
+}
+
+function filterGenrePicker(query) {
+  const q = (query || "").toLowerCase().trim();
+  const buttons = document.querySelectorAll("#genre-picker-list .picker-chip");
+  let shown = 0;
+  for (const b of buttons) {
+    const match = !q || b.dataset.genre.includes(q);
+    b.style.display = match ? "" : "none";
+    if (match) shown++;
+  }
+  const hint = $("genre-picker-hint");
+  if (hint) hint.textContent = q ? `${shown} 件ヒット` : `${buttons.length} 件`;
+}
+
+// 入力中にフィルタ + picker 自動展開
+ST.chipInputs.genres.input.addEventListener("input", (e) => {
+  const v = e.target.value;
+  filterGenrePicker(v);
+  const picker = document.querySelector(".genres-picker");
+  if (picker && v && !picker.open) picker.open = true;
+});
+
+buildGenrePicker().then(() => filterGenrePicker(""));
 
 async function loadSettings() {
   const r = await fetch("/api/settings");

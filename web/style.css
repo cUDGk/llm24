@@ -506,6 +506,14 @@ details[open] summary::before { content: "− "; color: var(--accent); }
   padding: 0.5rem;
   border: 1px solid var(--rule);
   background: var(--art-fb-bg);
+  max-height: 280px;
+  overflow-y: auto;
+}
+.picker-count {
+  margin-left: 0.5rem;
+  font-size: 0.6rem;
+  letter-spacing: 0.15em;
+  color: var(--dim);
 }
 .picker-chip {
   font-size: 0.78rem;
