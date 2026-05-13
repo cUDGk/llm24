@@ -761,12 +761,33 @@ $("btn-toggle").addEventListener("click", async () => {
   if (btn.disabled) return;
   btn.disabled = true;
   try {
-    if (ST.onAir) await stopOnAir();
-    else await startOnAir();
+    if (ST.pendingResume) {
+      // リロード後の継続再開: サーバ状態は維持されているのでクライアントだけ起こす
+      ST.pendingResume = false;
+      await resumeOnAir();
+    } else if (ST.onAir) {
+      await stopOnAir();
+    } else {
+      await startOnAir();
+    }
   } finally {
     btn.disabled = false;
   }
 });
+
+async function resumeOnAir() {
+  if (!ST.deviceId) {
+    alert(t("spotify_not_ready"));
+    return;
+  }
+  if (!ST.audioCtx) ST.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (ST.audioCtx.state === "suspended") await ST.audioCtx.resume();
+  ST.onAir = true;
+  ST.ttsAbort = false;
+  setOnAirUI(true);
+  $("np-state").textContent = t("state_on_air");
+  loop();
+}
 $("btn-spotify-login").addEventListener("click", () => {
   window.location.href = "/auth/spotify";
 });
@@ -801,6 +822,17 @@ $("btn-lang").addEventListener("click", () => {
 
   const r = await fetch("/api/status");
   const j = await r.json();
+
+  // サーバが ON AIR 状態のままリロードされた場合は UI を「停止」表示にして、
+  // 1クリックで loop 再開できるようにする (AudioContext はユーザー操作前に
+  // resume できないので完全自動再開はできない)
+  if (j.on_air) {
+    setOnAirUI(true);
+    $("np-state").textContent = "前回継続中 (▶ で再開)";
+    $("btn-toggle").textContent = "▶ 再開";
+    ST.pendingResume = true;
+  }
+
   if (!j.spotify_authenticated) {
     $("btn-spotify-login").hidden = false;
     $("btn-toggle").hidden = true;
