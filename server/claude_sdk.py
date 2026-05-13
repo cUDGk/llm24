@@ -83,10 +83,17 @@ async def _ask_inner(prompt: str, system_extra: str = "") -> str:
 
 
 async def _ask(prompt: str, system_extra: str = "") -> str:
-    """Claude に1ターン投げてテキストを取り出す。タイムアウト付き。"""
+    """Claude に1ターン投げてテキストを取り出す。タイムアウト付き、所要時間ログ。"""
+    import time as _time
+    t0 = _time.monotonic()
     try:
-        return await asyncio.wait_for(_ask_inner(prompt, system_extra), timeout=CLAUDE_TIMEOUT_SECONDS)
+        result = await asyncio.wait_for(_ask_inner(prompt, system_extra), timeout=CLAUDE_TIMEOUT_SECONDS)
+        dt = _time.monotonic() - t0
+        print(f"[claude] _ask {dt:.2f}s (chars={len(result)})", flush=True)
+        return result
     except asyncio.TimeoutError:
+        dt = _time.monotonic() - t0
+        print(f"[claude] _ask TIMEOUT after {dt:.2f}s", flush=True)
         raise RuntimeError(f"Claude SDK timed out after {CLAUDE_TIMEOUT_SECONDS}s")
 
 

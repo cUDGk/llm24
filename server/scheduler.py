@@ -84,6 +84,8 @@ class SchedulerState:
 
 _state = SchedulerState()
 _lock = asyncio.Lock()
+_prefetched_segment: dict | None = None
+_prefetch_task: asyncio.Task | None = None
 
 
 def state() -> SchedulerState:
@@ -91,14 +93,84 @@ def state() -> SchedulerState:
 
 
 async def start():
+    global _prefetch_task, _prefetched_segment
     async with _lock:
         _state.started = True
         await db.init_db()
+    # まず 0.x 秒で出せる opener segment を同期セット (Claude不要、 VOICEVOXのみ)。
+    # これでユーザーの 「開始 → 即音」体験が確定する。
+    settings = load_settings()
+    p = persona.current_persona(datetime.now())
+    speaker = _voice_id(settings, p.slot, p.default_speaker_id)
+    opener_text = random.choice(OPENER_LINES)
+    _prefetched_segment = {
+        "kind": "opener",
+        "persona": p.slot,
+        "steps": [{"type": "tts", "text": opener_text, "speaker": speaker}],
+        "next_song": None,
+    }
+    # 並行で本格 segment を生成 (Claude 等で時間かかる) → opener 消化後にすぐ提供できる
+    _prefetch_task = asyncio.create_task(_warm_first_segment_full())
 
 
 async def stop():
+    global _prefetched_segment, _prefetch_task
     async with _lock:
         _state.started = False
+    _prefetched_segment = None
+    if _prefetch_task and not _prefetch_task.done():
+        _prefetch_task.cancel()
+    _prefetch_task = None
+
+
+OPENER_LINES = [
+    "LLM24、オンエアです。深呼吸ひとつ、ゆっくり始めましょう。今夜も最後までお付き合いください。",
+    "こんばんは、LLM24です。お疲れさまでした、楽にして聴いてください。それでははじめます。",
+    "LLM24、はじまります。今夜はあなたの隣で、淡々と曲を回していきますので、よろしくお願いします。",
+    "LLM24です。手を動かしながらでも、横になっていてもどうぞ。今夜の最初の一曲、もうすぐかけます。",
+]
+
+
+async def _warm_first_segment_full():
+    """opener 消化後にすぐ流せるよう、 通常の next_segment を 1 つ準備しておく。"""
+    global _prefetched_segment
+    try:
+        import time as _time
+        settings = load_settings()
+        now = datetime.now()
+        t0 = _time.monotonic()
+        try:
+            seg = await _next_segment_inner(settings, now)
+        except Exception as e:
+            seg = await _build_fallback_segment(settings, now, repr(e))
+        dt = _time.monotonic() - t0
+        # opener がまだ取られていなければそのまま (ユーザー取りに来ると opener)、
+        # opener が消費済みなら本物に置換
+        if _prefetched_segment is None or _prefetched_segment.get("kind") == "opener":
+            # opener はそのまま、本物は別保存できる枠が無いのでここでは触らない
+            # = opener取得時に再度本物の warm をキックする方が良い
+            pass
+        else:
+            pass
+        # 一旦どちらかが消化されてからの提供は next_segment 側で待ち合わせるので、
+        # ここでは _prefetched_segment が None だった場合のみセット
+        if _prefetched_segment is None:
+            _prefetched_segment = seg
+            print(f"[scheduler] warm-full set as prefetched in {dt:.2f}s kind={seg.get('kind')}", flush=True)
+        else:
+            # opener が残っている → そのままにしておき、 next_segment が opener を返した直後の
+            # 呼び出しで _next_segment_inner が走る代わりに、 ここで作った seg を覚えておく
+            _PendingFullSegment.value = seg
+            print(f"[scheduler] warm-full queued (opener still pending) in {dt:.2f}s kind={seg.get('kind')}", flush=True)
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        print(f"[scheduler] warm failed: {e}", flush=True)
+
+
+class _PendingFullSegment:
+    """opener の後に出すべき本格 segment をひとまず置いておくスロット。"""
+    value: dict | None = None
 
 
 def _floor_to_half_hour(now: datetime) -> datetime:
@@ -215,7 +287,9 @@ async def _build_candidate_pool(settings: dict) -> list[dict]:
 
 
 async def _pick_from_charts(settings: dict, active_mail: dict | None) -> dict | None:
-    """候補プール (top tracks + 検索) から除外を弾いて1曲ランダム選択。"""
+    """候補プール (top tracks + 検索) から除外を弾いて1曲ランダム選択。
+    現在ジャンルのプールが空 (or 全部除外で残らない) なら次ジャンルへ自動切替し、
+    最大3回まで再試行する。"""
     locked_ids = await db.recent_spotify_ids(hours=24)
     recent_plays = await db.recent_plays(limit=20)
     recent_artists = [r["artist"] for r in recent_plays[:2]]
@@ -224,48 +298,40 @@ async def _pick_from_charts(settings: dict, active_mail: dict | None) -> dict | 
     ex_artists = {a.lower() for a in exclude.get("artists", [])}
     ex_keywords = [k.lower() for k in exclude.get("keywords", [])]
     allowed_languages = settings.get("allowed_languages") or []
-
-    candidates = await _build_candidate_pool(settings)
-    # 言語フィルタ
-    if allowed_languages:
-        candidates = [t for t in candidates if _is_allowed_language(t, allowed_languages)]
-    if not candidates:
-        return None
+    genres_list = settings.get("genres", []) or []
 
     def ok(t: dict) -> bool:
         if t["id"] in locked_ids:
             return False
         if t["artist"].lower() in ex_artists:
             return False
-        # 連続同アーティスト2曲制限: 直近2曲のartistと一致したらNG
         if recent_artists.count(t["artist"]) >= 2:
             return False
         hay = (t["artist"] + " " + t["title"]).lower()
         if any(k in hay for k in ex_keywords if k):
             return False
+        if allowed_languages and not _is_allowed_language(t, allowed_languages):
+            return False
         return True
 
-    pool = [t for t in candidates if ok(t)]
-    if not pool:
-        # 緩めて recent_artists 制限のみ無視
-        pool = [t for t in candidates if t["id"] not in locked_ids]
-    if not pool:
+    # 最大 (ジャンル数) 回試行: 現在ジャンルで条件合致なし → 次ジャンルへ。
+    # 言語フィルタはユーザー意思なので絶対に緩和しない。
+    max_attempts = max(1, len(genres_list) or 1)
+    candidates: list[dict] = []
+    for attempt in range(max_attempts):
+        pool = await _build_candidate_pool(settings)
+        candidates = [t for t in pool if ok(t)]
+        if candidates:
+            break
+        if len(genres_list) > 1 and attempt < max_attempts - 1:
+            _state.current_genre_idx += 1
+            _state.songs_in_current_genre = 0
+            print(f"[scheduler] pool empty, advancing genre → {_active_genre(settings)}", flush=True)
+
+    if not candidates:
         return None
 
-    # active_mail でリクエスト指定があれば、それに近い曲を優先選択 (緩い文字列マッチ)
-    if active_mail and (active_mail.get("request") or active_mail.get("body")):
-        query = (active_mail.get("request") or active_mail.get("body")).lower()
-        scored = [
-            (t, 1 if any(q in (t["artist"] + t["title"]).lower() for q in query.split()) else 0)
-            for t in pool
-        ]
-        scored.sort(key=lambda x: x[1], reverse=True)
-        # 上位スコアからランダム選択
-        top_score = scored[0][1]
-        top = [t for t, s in scored if s == top_score]
-        return random.choice(top)
-
-    return random.choice(pool)
+    return random.choice(candidates)
 
 
 async def _resolve_mail_track(mail: dict) -> dict | None:
@@ -472,18 +538,61 @@ async def _build_fallback_segment(settings: dict, now: datetime, reason: str) ->
 # ---- public ----
 
 async def next_segment() -> dict[str, Any]:
+    global _prefetched_segment, _prefetch_task
+    import time as _time
+
+    # まず即時取得可能なものがあれば返す (opener 等)
+    if _prefetched_segment is not None:
+        async with _lock:
+            if not _state.started:
+                raise RuntimeError("scheduler not started (ON AIR押下が必要)")
+            if _prefetched_segment is not None:
+                seg = _prefetched_segment
+                _prefetched_segment = None
+                # opener を消化した直後なら、 warm-full で用意した本格 seg を次回の prefetched に
+                if seg.get("kind") == "opener" and _PendingFullSegment.value is not None:
+                    _prefetched_segment = _PendingFullSegment.value
+                    _PendingFullSegment.value = None
+                print(f"[scheduler] served prefetched kind={seg.get('kind')}", flush=True)
+                return seg
+
+    # まだ無い → warm task の完了を待つ
+    if _prefetch_task is not None and not _prefetch_task.done():
+        try:
+            await _prefetch_task
+        except (asyncio.CancelledError, Exception):
+            pass
+    _prefetch_task = None
+
     async with _lock:
         if not _state.started:
             raise RuntimeError("scheduler not started (ON AIR押下が必要)")
+        if _prefetched_segment is not None:
+            seg = _prefetched_segment
+            _prefetched_segment = None
+            if seg.get("kind") == "opener" and _PendingFullSegment.value is not None:
+                _prefetched_segment = _PendingFullSegment.value
+                _PendingFullSegment.value = None
+            print(f"[scheduler] served prefetched (post-wait) kind={seg.get('kind')}", flush=True)
+            return seg
         now = datetime.now()
         settings = load_settings()
-
+        t0 = _time.monotonic()
         try:
-            return await _next_segment_inner(settings, now)
-        except RuntimeError:
-            raise
+            seg = await _next_segment_inner(settings, now)
+        except RuntimeError as e:
+            # 'not started' だけは正常 (offair済み) として 409 にする
+            if "not started" in str(e):
+                raise
+            print(f"[scheduler] runtime error → fallback: {e}", flush=True)
+            seg = await _build_fallback_segment(settings, now, repr(e))
         except Exception as e:
-            return await _build_fallback_segment(settings, now, repr(e))
+            print(f"[scheduler] unhandled → fallback: {e}", flush=True)
+            seg = await _build_fallback_segment(settings, now, repr(e))
+        dt = _time.monotonic() - t0
+        steps_count = len(seg.get("steps") or [])
+        print(f"[scheduler] next_segment kind={seg.get('kind')} {dt:.2f}s steps={steps_count}", flush=True)
+        return seg
 
 
 async def _next_segment_inner(settings: dict, now: datetime) -> dict[str, Any]:

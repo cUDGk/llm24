@@ -29,11 +29,14 @@ def _cache_key(text: str, speaker_id: int) -> Path:
 
 async def synthesize(text: str, speaker_id: int, *, use_cache: bool = True) -> Path:
     """TTSしてWAVファイルパスを返す (音量は VOLUME_SCALE 倍)。"""
+    import time as _time
+    t0 = _time.monotonic()
     if not text.strip():
         raise VoicevoxError("空のテキストはTTSできない")
 
     path = _cache_key(text, speaker_id)
     if use_cache and path.exists() and path.stat().st_size > 0:
+        print(f"[voicevox] cache hit ({len(text)}ch, spk={speaker_id})", flush=True)
         return path
 
     async with httpx.AsyncClient(base_url=VOICEVOX_BASE_URL, timeout=60.0) as client:
@@ -58,6 +61,8 @@ async def synthesize(text: str, speaker_id: int, *, use_cache: bool = True) -> P
 
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(s.content)
+    dt = _time.monotonic() - t0
+    print(f"[voicevox] gen {dt:.2f}s ({len(text)}ch, spk={speaker_id}, {len(s.content)//1024}KB)", flush=True)
     return path
 
 
