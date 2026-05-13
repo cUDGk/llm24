@@ -1,96 +1,128 @@
+<div align="center">
+
 # LLM24
 
-24時間稼働する AI DJ ラジオ。台本は Claude Code SDK、TTS は VOICEVOX、再生は Spotify Web Playback SDK。
+### 24時間稼働する AI DJ ラジオ
 
-ローカルで FastAPI を立てて、ブラウザ (Chrome/Edge) で `http://127.0.0.1:11324` を開く。
+[![Python](https://img.shields.io/badge/Python-3.11+-3776AB?style=flat&logo=python&logoColor=white)](https://www.python.org/)
+[![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688?style=flat&logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
+[![Spotify](https://img.shields.io/badge/Spotify-Web%20Playback%20SDK-1DB954?style=flat&logo=spotify&logoColor=white)](https://developer.spotify.com/documentation/web-playback-sdk)
+[![VOICEVOX](https://img.shields.io/badge/VOICEVOX-Engine%200.25-41A2EC?style=flat)](https://voicevox.hiroshiba.jp/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green?style=flat)](LICENSE)
 
-## 必要なもの
+**台本も選曲も毎回 LLM 生成、 ローカルで完結する 24 時間ノンストップのパーソナル AI ラジオ**
 
-- **Windows** + **Python 3.11+**
-- **ffmpeg** (PATH に通っていること、または `.env` の `FFMPEG_BIN` で指定)
-- **Spotify Premium アカウント** (Web Playback SDK が Premium 必須)
-- **Spotify Developer 登録** (Client ID / Secret)
-- **Claude Code Max サブスク** (このリポを動かしている Claude Code 環境がそのまま使われる)
-- **VOICEVOX** (`scripts/setup_voicevox.ps1` で自動DL/配置)
+---
 
-## セットアップ
+</div>
 
-### 1. Spotify Developer 登録
+## 概要
 
-1. <https://developer.spotify.com/dashboard> へアクセス
-2. 「Create app」
-   - App name: `LLM24`（任意）
-   - App description: 任意
-   - **Redirect URI**: `http://127.0.0.1:11324/auth/spotify/callback`
-   - APIs: `Web API` と `Web Playback SDK` をチェック
-3. 作成後、`Client ID` と `Client secret` をコピー
+ローカル PC で立ち上げて、 ブラウザを Spotify Connect デバイスに変えて 24 時間流し続ける AI DJ ラジオ。 台本は LLM、 読み上げは VOICEVOX、 再生は Spotify Web Playback SDK でブラウザ自身が鳴らす。 設定はジャンル / 推しアーティスト / 言語フィルタ / 曲振り頻度 / 時間帯ペルソナまで自由にカスタム可能。
 
-### 2. `.env` 作成
+## 特徴
 
-```powershell
-Copy-Item .env.example .env
-notepad .env
+| 領域 | 内容 |
+|---|---|
+| 番組進行 | 30 分構成、 時報、 雑談、 曲振り、 お便りコーナー。 ジャンルローテーション (1 ジャンル N 曲ごと切替) |
+| ペルソナ | 時間帯別 4 種 (深夜 / 朝 / 昼 / 夕方夜)。 男性 DJ ・ハイテンション禁止のゆるい基調 |
+| 選曲 | ユーザー指定ジャンルから Spotify `genre:` フィルタ検索。 約 350 タグから候補入力補助、 自由入力可。 同曲 24h ロック、 連続同アーティスト制限、 除外キーワード対応 |
+| 言語フィルタ | タイトル + アーティストの文字種で判定 (ja / en / ko / zh / ru / ar / th / hi)、 デフォルト ja + en |
+| お便り | ラジオネーム + 本文 + Spotify track/playlist URL (任意)。 force フラグで次曲必ず反映。 投函済み一覧表示 |
+| イントロ被せ | 曲開始と同時に DJ トーク TTS を被せて Spotify 音量を sine ease-in-out でダッキング |
+| プリフェッチ | 曲再生中に裏で次セグメント生成。 開始直後は固定 opener TTS で待ち時間ゼロ化 |
+| 停止 | フェードアウト → 880 Hz サイン波 × 3 → SDK disconnect で Spotify Connect から消える |
+| UI | ライトモード固定、 1 画面完結、 アコーディオン設定、 ジャンルピッカー (350 タグ live フィルタ)、 字幕表示 |
+
+## 構成
+
+```
+LLM24/
+├── server/             # FastAPI バックエンド
+│   ├── main.py         # エントリポイント・全エンドポイント
+│   ├── scheduler.py    # 番組進行ループ・セグメント生成
+│   ├── claude_sdk.py   # LLM 呼び出しラッパー (台本生成)
+│   ├── spotify.py      # Spotify Web API クライアント (検索 / 再生制御 / oEmbed)
+│   ├── voicevox.py     # VOICEVOX TTS クライアント (キャッシュ付き)
+│   ├── persona.py      # 時間帯別ペルソナ
+│   ├── mail_queue.py   # お便りキュー (force / 採用率)
+│   ├── settings_store.py
+│   └── db.py           # SQLite (mails / play_history / script_history / spotify_cache)
+├── web/                # フロントエンド (素の HTML/CSS/JS)
+│   ├── index.html
+│   ├── app.js
+│   ├── style.css
+│   └── genres.json     # Spotify ジャンルタグ ≈350 件
+├── tests/              # pytest 77 件 + 負荷テスト + CHECKLIST/TESTLOG
+├── scripts/            # VOICEVOX セットアップ・ジングル生成
+├── vendor/             # VOICEVOX エンジン解凍版 (gitignore 対象)
+├── assets/             # 時報 / お便り / 番組 ID ジングル
+└── data/               # SQLite / settings.json / TTS キャッシュ
 ```
 
-`SPOTIFY_CLIENT_ID` / `SPOTIFY_CLIENT_SECRET` に上で取った値を貼る。
+## インストール
 
-### 3. Python 環境
+### 必要なもの
 
-```powershell
+- Windows + Python 3.11+
+- ffmpeg (PATH に通っていること)
+- Spotify Premium アカウント
+- Spotify Developer 登録 (Client ID / Secret)
+- LLM 用のサブスクリプション (Maxプラン)
+- VOICEVOX 解凍版 (セットアップスクリプトで自動配置)
+
+### Spotify Developer 登録
+
+1. <https://developer.spotify.com/dashboard> でアプリ作成
+2. **Redirect URI**: `http://127.0.0.1:11324/auth/spotify/callback`
+3. APIs: **Web API** と **Web Playback SDK** をチェック
+4. Client ID / Secret をコピー
+
+### セットアップ
+
+```bash
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
 
-### 4. VOICEVOX 取得
+# .env に Spotify 認証情報を書く
+Copy-Item .env.example .env
 
-```powershell
+# VOICEVOX エンジン (約 1.8GB) を vendor/ に展開
 .\scripts\setup_voicevox.ps1
-```
 
-GitHub Release から CPU 解凍版を落として `vendor/voicevox/` に展開する。約1GB。
-
-### 5. ジングル素材
-
-`scripts/make_jingles.ps1` を実行すると ffmpeg で簡易ジングル (時報/お便り) を生成して `assets/` に置く。
-あとでお気に入りのフリー素材に差し替え可能。
-
-```powershell
+# ジングル素材を ffmpeg で生成
 .\scripts\make_jingles.ps1
 ```
 
-## 起動
+## 使い方
 
-ターミナル2枚を使う。
-
-**VOICEVOX を起動 (1枚目):**
-```powershell
+```bash
+# VOICEVOX 起動 (別シェル)
 .\scripts\run_voicevox.ps1
-```
 
-**サーバを起動 (2枚目):**
-```powershell
-.\.venv\Scripts\Activate.ps1
+# サーバ起動
 python -m server.main
 ```
 
-ブラウザで <http://127.0.0.1:11324> を開く → Spotify ログイン → **ON AIR** ボタンで番組開始。
+ブラウザで <http://127.0.0.1:11324> を開く → `SPOTIFY ログイン` → `開 始` ボタンで番組スタート。
 
-## 動作確認チェックリスト
+| 操作 | 動作 |
+|---|---|
+| 開 始 / 停 止 | 番組のオンエア切替。 停止時は 880 Hz × 3 |
+| お便り | フォームから投函。 Spotify URL を貼ると次曲をリクエスト |
+| 設定 | ジャンル / 推しアーティスト / 言語 / 曲振り頻度 等 |
+| JA / EN | UI 言語切替 (DJ の喋りは日本語のまま) |
 
-1. **VOICEVOX 起動** (`scripts\run_voicevox.ps1`) → ブラウザで <http://localhost:50021/version> が JSON を返す
-2. **サーバ起動** (`python -m server.main`) → <http://127.0.0.1:11324/api/status> が `{"on_air":false,...}` を返す
-3. **Spotify ログイン**: 画面右上 `SPOTIFY LOGIN` ボタンで認証 → 画面に戻ってくる
-4. **お便り投函**: ラジオネーム + 本文を入れて `投函` → DB に保存される (`/api/mail` で確認可)
-5. **ON AIR**: `START` ボタンで番組開始 → 数秒以内に DJ の曲振り → Spotify が曲を再生
-6. **STOP**: `STOP` ボタンで「ピッピッピー」(880Hz × 3) → 停止
+## テスト
 
-## トラブルシュート
+```bash
+.\.venv\Scripts\python.exe -m pytest tests/ -v          # 単体 77 件
+.\.venv\Scripts\python.exe tests\integration_stress.py 8  # 負荷
+```
 
-- **`ON AIR` を押しても何も起きない**: ブラウザコンソールで `account_error` が出ていれば Spotify Premium 未加入。
-- **Spotify 再生はされるが TTS が出ない**: VOICEVOX が起動していない。`scripts\run_voicevox.ps1` を確認。
-- **Claude SDK で `command not found: claude`**: Claude Code CLI 未インストール。`npm i -g @anthropic-ai/claude-code` か Max サブスクの環境で実行。
+詳細は [`tests/TESTLOG.md`](tests/TESTLOG.md) / [`tests/CHECKLIST.md`](tests/CHECKLIST.md)。
 
-## 仕様
+## ライセンス
 
-詳細は [`../LLM24_仕様書.md`](../LLM24_仕様書.md) を参照。
+[MIT License](LICENSE) © 2026 cUDGk
