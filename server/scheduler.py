@@ -79,6 +79,7 @@ class SchedulerState:
     started: bool = False
     current_genre_idx: int = 0          # 現在使ってる genre のインデックス
     songs_in_current_genre: int = 0      # 現在 genre で連続して流した曲数
+    songs_since_intro: int = 99          # 直近の曲振りトークから何曲経ったか (初回は必ず喋るよう大きく)
 
 
 _state = SchedulerState()
@@ -348,20 +349,31 @@ async def _build_song_segment(
     if not track:
         raise RuntimeError("選曲失敗 (Spotify認証 / シードアーティスト設定を確認)")
 
-    # 曲振り台本生成
-    intro = await claude_sdk.gen_song_intro(
-        persona_desc=p.description,
-        artist=track["artist"],
-        title=track["title"],
-        related_mail=active_mail,
-        recent_summaries=summaries,
-    )
-    intro_text = intro["text"]
-    intro_summary = intro.get("summary", intro_text[:20])
+    # 曲振りトークを生成するか判定
+    intro_every = max(1, int(settings.get("intro_every", 1)))
+    # お便り絡みの曲では必ずトークする (お便りの読み上げと一体)、それ以外は intro_every 周期
+    should_speak = bool(active_mail) or _state.songs_since_intro >= intro_every - 1
+
+    intro_text = None
+    intro_summary = None
+    if should_speak:
+        intro = await claude_sdk.gen_song_intro(
+            persona_desc=p.description,
+            artist=track["artist"],
+            title=track["title"],
+            related_mail=active_mail,
+            recent_summaries=summaries,
+        )
+        intro_text = intro["text"]
+        intro_summary = intro.get("summary", intro_text[:20])
+        _state.songs_since_intro = 0
+    else:
+        _state.songs_since_intro += 1
 
     # 履歴記録
     await db.add_play(track["id"], track["artist"], track["title"])
-    await db.add_script(kind="intro", content=intro_text, summary=intro_summary)
+    if intro_text:
+        await db.add_script(kind="intro", content=intro_text, summary=intro_summary)
     if active_mail:
         await mail_queue.consume_mail(active_mail["id"])
 
@@ -376,7 +388,7 @@ async def _build_song_segment(
             steps.append({"type": "jingle", "url": "/assets/jingle_mail.wav"})
         steps.append({"type": "tts", "text": mail_intro_text, "speaker": speaker})
 
-    steps.append({
+    song_step: dict[str, Any] = {
         "type": "song",
         "spotify_uri": track["uri"],
         "spotify_id": track["id"],
@@ -384,8 +396,10 @@ async def _build_song_segment(
         "artist": track["artist"],
         "title": track["title"],
         "album_image": track["album_image"],
-        "intro_tts": {"text": intro_text, "speaker": speaker},
-    })
+    }
+    if intro_text:
+        song_step["intro_tts"] = {"text": intro_text, "speaker": speaker}
+    steps.append(song_step)
 
     return {
         "kind": "song",

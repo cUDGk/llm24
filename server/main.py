@@ -247,6 +247,27 @@ async def api_set_device(payload: DeviceIn):
     return {"ok": True}
 
 
+@app.post("/api/spotify/warmup")
+async def api_spotify_warmup():
+    """開始ボタン押下時に呼ぶ: デバイスを active 状態にしてから即停止しておくと、
+    1曲目の play_uri が安定する (Restriction violated 対策)。"""
+    import asyncio as _asyncio
+    if not _client_device_id:
+        return {"ok": False, "reason": "no device"}
+    try:
+        await spotify.transfer_playback(_client_device_id, play=True)
+        await _asyncio.sleep(0.25)
+        try:
+            await spotify.pause(_client_device_id)
+        except spotify.SpotifyError:
+            pass
+        print("[spotify] device warmed up", flush=True)
+        return {"ok": True}
+    except spotify.SpotifyError as e:
+        print(f"[spotify] warmup failed: {e}", flush=True)
+        return {"ok": False, "reason": str(e)}
+
+
 @app.post("/api/spotify/play")
 async def api_spotify_play(payload: PlayIn):
     import asyncio as _asyncio

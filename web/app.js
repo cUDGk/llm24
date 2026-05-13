@@ -84,6 +84,7 @@ const I18N = {
     excl_artists: "除外アーティスト",
     personality: "性格カスタム", chat_freq: "雑談頻度",
     freq_loose: "緩い", freq_normal: "普通", freq_dense: "多め",
+    intro_every: "曲振りトークの頻度",
     mail_adoption: "お便り採用率",
     adopt_every: "毎回", adopt_few: "数曲に1回", adopt_full: "溜まったら",
     jingle_on: "時報ジングル ON", save: "保 存", save_ok: "保存しました",
@@ -112,6 +113,7 @@ const I18N = {
     excl_artists: "Excluded artists",
     personality: "Personality custom", chat_freq: "Chat frequency",
     freq_loose: "loose", freq_normal: "normal", freq_dense: "dense",
+    intro_every: "DJ talk frequency",
     mail_adoption: "Mail adoption rate",
     adopt_every: "every track", adopt_few: "every few tracks", adopt_full: "when queue is full",
     jingle_on: "Time-signal jingle ON", save: "SAVE", save_ok: "saved",
@@ -251,6 +253,15 @@ async function startOnAir() {
     ST.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
   if (ST.audioCtx.state === "suspended") await ST.audioCtx.resume();
+
+  // Device ウォームアップ: 1曲目の play_uri が 'Restriction violated' で落ちる問題対策。
+  // transfer(play=true) で強制アクティブ化 → 即 pause で前曲を止めておく。
+  // ここまで全部 user-gesture (toggle clicked) 内で同期的に進む。
+  try {
+    await fetch("/api/spotify/warmup", { method: "POST" });
+  } catch (e) {
+    console.warn("[warmup] failed (continuing)", e);
+  }
 
   const r = await fetch("/api/onair", { method: "POST" });
   if (!r.ok) {
@@ -913,6 +924,7 @@ async function loadSettings() {
   $("s-personality").value = s.personality_custom || "";
   $("s-chat-freq").value = s.chat_frequency || "normal";
   $("s-mail-adopt").value = s.mail_adoption || "every_few";
+  $("s-intro-every").value = String(s.intro_every || 1);
   $("s-jingle").checked = s.jingle_enabled !== false;
 
   const allowed = new Set(s.allowed_languages || []);
@@ -934,6 +946,7 @@ $("settings-form").addEventListener("submit", async (e) => {
     personality_custom: $("s-personality").value,
     chat_frequency: $("s-chat-freq").value,
     mail_adoption: $("s-mail-adopt").value,
+    intro_every: parseInt($("s-intro-every").value, 10) || 1,
     jingle_enabled: $("s-jingle").checked,
     allowed_languages: Array.from(document.querySelectorAll("[data-lang]:checked")).map((cb) => cb.value),
   };
