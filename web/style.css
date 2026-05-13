@@ -445,17 +445,21 @@ details summary::-webkit-details-marker { display: none; }
 details summary::before { content: "+ "; color: var(--dim); }
 details[open] summary::before { content: "− "; color: var(--accent); }
 
-/* 右カラムのアコーディオン */
+/* 右カラムのアコーディオン: 各accは自然な高さ。開いて入りきらなければ
+   親 .cell.right-stack 全体が overflow-y: auto でスクロールするだけ。
+   開閉でページ全体は動かない (body は overflow:hidden で固定)。 */
 .right-stack { display: flex; flex-direction: column; gap: 0; }
-.acc {
-  border-bottom: 1px solid var(--rule);
-}
+.acc { border-bottom: 1px solid var(--rule); }
 .acc:last-child { border-bottom: none; }
 .acc > summary {
   padding: 0.7rem 0;
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  position: sticky;
+  top: 0;
+  background: var(--bg);
+  z-index: 1;
 }
 .acc > summary > span {
   font-family: "Cinzel", serif;
@@ -468,3 +472,10 @@ details[open] summary::before { content: "− "; color: var(--accent); }
 .acc[open] { padding-bottom: 0.7rem; }
 .acc > *:not(summary) { margin-top: 0.4rem; }
 .acc .mail-list { max-height: none; }
+
+.field-hint {
+  margin-top: 0.25rem;
+  font-size: 0.7rem;
+  color: var(--dim);
+  line-height: 1.4;
+}

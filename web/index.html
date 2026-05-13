@@ -87,7 +87,8 @@
         <form id="settings-form" class="settings-form">
           <div class="field">
             <span data-i18n="genres">ジャンル</span>
-            <div id="s-genres-chips" class="chip-input" data-placeholder="Spotify公式ジャンルから選択" data-list="spotify-genres"></div>
+            <div id="s-genres-chips" class="chip-input" data-placeholder="例: j-pop / city pop / 自由入力可" data-list="spotify-genres"></div>
+            <div class="field-hint">候補リストはSpotify公式タグの抜粋。リストに無い文字列を入力してもOK (内部で genre:"..." → 0件なら曲名検索にフォールバック)。</div>
           </div>
           <datalist id="spotify-genres">
             <option value="j-pop"></option>
