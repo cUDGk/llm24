@@ -206,13 +206,31 @@ async def _pick_from_charts(settings: dict, active_mail: dict | None) -> dict | 
 
 
 async def _resolve_mail_track(mail: dict) -> dict | None:
-    """お便りのrequest欄が Spotify track URL/URI ならメタ解決。
-    /tracks/{id} は新規アプリで403になるため、oEmbed (認証不要) でタイトル/サムネ取得。
-    duration_ms は取れないので 0 を返し、フロントが player state から取得する。
+    """お便りのrequest欄を解釈してトラックメタを返す。
+    対応:
+      - https://open.spotify.com/track/...   → そのトラック
+      - https://open.spotify.com/playlist/.. → そのプレイリストから1曲ランダム
     """
     if not mail or not mail.get("request"):
         return None
-    track_id = spotify.parse_track_id(mail["request"])
+    req = mail["request"]
+
+    # 1) playlist URL → プレイリストから1曲ランダム
+    playlist_id = spotify.parse_playlist_id(req)
+    if playlist_id:
+        try:
+            tracks = await spotify.get_playlist_tracks(playlist_id, limit=100)
+        except spotify.SpotifyError as e:
+            print(f"[scheduler] playlist fetch failed: {e}", flush=True)
+            return None
+        if not tracks:
+            return None
+        locked = await db.recent_spotify_ids(hours=24)
+        avail = [t for t in tracks if t["id"] not in locked]
+        return random.choice(avail or tracks)
+
+    # 2) track URL → oEmbed + search でメタ解決
+    track_id = spotify.parse_track_id(req)
     if not track_id:
         return None
 
@@ -221,13 +239,11 @@ async def _resolve_mail_track(mail: dict) -> dict | None:
     album_image = None
     duration_ms = 0
 
-    # 1. oEmbed で曲名とサムネを取得 (認証不要)
     meta = await spotify.get_track_oembed(track_id)
     if meta:
         title = (meta.get("title") or "").strip() or title
         album_image = meta.get("thumbnail_url") or None
 
-    # 2. Search でアーティストと duration を解決 (oEmbedの曲名で逆引き)
     if title and title != "(リクエスト曲)":
         try:
             results = await spotify.search_by_track_query(title, limit=10)

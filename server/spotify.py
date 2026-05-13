@@ -195,14 +195,22 @@ async def search_track(artist: str, title: str) -> dict | None:
 import re as _re
 
 _TRACK_RE = _re.compile(r"(?:track[:/])([A-Za-z0-9]{22})")
+_PLAYLIST_RE = _re.compile(r"(?:playlist[:/])([A-Za-z0-9]{22})")
 
 
 def parse_track_id(url_or_uri: str) -> str | None:
-    """Spotify track URL/URI から track id (22文字) を抽出。
-    対応: https://open.spotify.com/track/XXX, spotify:track:XXX, intl-* など"""
+    """Spotify track URL/URI から track id (22文字) を抽出。"""
     if not url_or_uri:
         return None
     m = _TRACK_RE.search(url_or_uri)
+    return m.group(1) if m else None
+
+
+def parse_playlist_id(url_or_uri: str) -> str | None:
+    """Spotify playlist URL/URI から playlist id を抽出。"""
+    if not url_or_uri:
+        return None
+    m = _PLAYLIST_RE.search(url_or_uri)
     return m.group(1) if m else None
 
 

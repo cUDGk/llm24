@@ -73,9 +73,9 @@ const I18N = {
     state_stopping: "停止しています", state_error: "エラー (3秒後に再試行)",
     next_track: "次の曲",
     mail: "お便り", radio_name: "ラジオネーム", body: "本文",
-    track_url: "Spotifyの曲URL (任意)", force_next: "次の曲で必ず反映する",
+    track_url: "Spotifyの曲・プレイリストURL (任意)", force_next: "次の曲で必ず反映する",
     submit: "投 函", submit_ok: "投函しました", submit_fail: "失敗",
-    bad_url: "Spotifyの曲URL (https://open.spotify.com/track/...) を入力してください",
+    bad_url: "Spotifyの曲またはプレイリストURLを入力してください",
     sent_mails: "投函済み",
     tag_queued: "未読", tag_read: "読了", tag_consumed: "消化",
     recent: "最近の曲", settings: "設定", open_settings: "設定を開く",
@@ -101,9 +101,9 @@ const I18N = {
     state_stopping: "stopping", state_error: "error (retry in 3s)",
     next_track: "NEXT",
     mail: "MAIL", radio_name: "Radio Name", body: "Message",
-    track_url: "Spotify track URL (optional)", force_next: "Apply to the very next track",
+    track_url: "Spotify track / playlist URL (optional)", force_next: "Apply to the very next track",
     submit: "SEND", submit_ok: "sent", submit_fail: "failed",
-    bad_url: "Must be a Spotify track URL (https://open.spotify.com/track/...)",
+    bad_url: "Must be a Spotify track or playlist URL",
     sent_mails: "SENT MAILS",
     tag_queued: "QUEUED", tag_read: "READ", tag_consumed: "READ",
     recent: "RECENT", settings: "SETTINGS", open_settings: "Open settings",
@@ -640,8 +640,8 @@ function setOnAirUI(on) {
 $("mail-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const reqRaw = $("m-request").value.trim();
-  // バリデーション: 入力があれば Spotify track URL でなければ拒否
-  if (reqRaw && !/(?:track[:/])[A-Za-z0-9]{22}/.test(reqRaw)) {
+  // バリデーション: 入力があれば Spotify track or playlist URL でなければ拒否
+  if (reqRaw && !/(?:track|playlist)[:/][A-Za-z0-9]{22}/.test(reqRaw)) {
     $("m-status").textContent = t("bad_url");
     return;
   }
