@@ -18,13 +18,17 @@ class VoicevoxError(RuntimeError):
     pass
 
 
+# 1.0 がVOICEVOXデフォルト。 大きすぎるとクリップするので 1.5 が上限目安。
+VOLUME_SCALE = 1.5
+
+
 def _cache_key(text: str, speaker_id: int) -> Path:
-    h = hashlib.sha256(f"{speaker_id}:{text}".encode("utf-8")).hexdigest()[:24]
+    h = hashlib.sha256(f"v{VOLUME_SCALE}:{speaker_id}:{text}".encode("utf-8")).hexdigest()[:24]
     return CACHE_DIR / f"tts_{speaker_id}_{h}.wav"
 
 
 async def synthesize(text: str, speaker_id: int, *, use_cache: bool = True) -> Path:
-    """TTSしてWAVファイルパスを返す。"""
+    """TTSしてWAVファイルパスを返す (音量は VOLUME_SCALE 倍)。"""
     if not text.strip():
         raise VoicevoxError("空のテキストはTTSできない")
 
@@ -40,6 +44,8 @@ async def synthesize(text: str, speaker_id: int, *, use_cache: bool = True) -> P
         if q.status_code != 200:
             raise VoicevoxError(f"audio_query failed: {q.status_code} {q.text}")
         query = q.json()
+        # 音量を上げる (DJの声が小さいので)
+        query["volumeScale"] = VOLUME_SCALE
 
         s = await client.post(
             "/synthesis",

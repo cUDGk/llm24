@@ -295,36 +295,51 @@ async function loop() {
   }
   ST.loopRunning = true;
   ST.nextSegmentPromise = null;
+  let consecutiveFails = 0;
+
   try {
     while (ST.onAir) {
+      let seg = null;
       try {
-        // 既にプリフェッチ済みなら即取得、なければここで fetch
         if (!ST.nextSegmentPromise) {
           showLoading(true);
           ST.nextSegmentPromise = fetchNextSegment();
         }
-        const seg = await ST.nextSegmentPromise;
+        seg = await ST.nextSegmentPromise;
         ST.nextSegmentPromise = null;
         showLoading(false);
+      } catch (e) {
+        console.warn("[loop] fetch threw, retry shortly", e);
+        showLoading(false);
+        ST.nextSegmentPromise = null;
+        await shortSleep();
+        continue;
+      }
 
-        if (seg === "stopped") {
-          ST.onAir = false;
-          break;
+      if (seg === "stopped") {
+        ST.onAir = false;
+        break;
+      }
+      if (!seg) {
+        // fetch null = サーバ側で fallback も失敗 等。短時間でリトライ
+        consecutiveFails++;
+        if (consecutiveFails > 8) {
+          console.error("[loop] too many consecutive fails, longer wait");
+          await sleep(5000);
+          consecutiveFails = 0;
+        } else {
+          await shortSleep();
         }
-        if (!seg) {
-          throw new Error("segment fetch failed");
-        }
+        continue;
+      }
+      consecutiveFails = 0;
 
-        clearNextUp();
-        // playSegment 内で song step に入ったタイミングでバックグラウンド prefetch する。
-        // setTimeout は使わない (race と多重発火の元なので)。
+      clearNextUp();
+      try {
         await playSegment(seg);
       } catch (e) {
-        showLoading(false);
-        ST.nextSegmentPromise = null;
-        console.error("[loop] segment error:", e);
-        $("np-state").textContent = t("state_error");
-        for (let i = 0; i < 15 && ST.onAir; i++) await sleep(200);
+        // playSegment は内部で try/catch しているが念のため
+        console.warn("[loop] playSegment threw (skipping)", e);
       }
     }
   } finally {
@@ -333,6 +348,10 @@ async function loop() {
     showLoading(false);
     console.log("[loop] exited");
   }
+}
+
+async function shortSleep() {
+  for (let i = 0; i < 3 && ST.onAir; i++) await sleep(200);
 }
 
 async function fetchNextSegment() {
@@ -406,14 +425,20 @@ async function playSegment(seg) {
   for (const step of seg.steps || []) {
     if (!step) continue;
     if (!ST.onAir) return;
-    if (step.type === "jingle") {
-      await playSampleUrl(step.url);
-    } else if (step.type === "tts") {
-      if (step.text) showSubtitle(step.text);
-      await playTtsText(step.text || "", step.speaker);
+    try {
+      if (step.type === "jingle") {
+        await playSampleUrl(step.url);
+      } else if (step.type === "tts") {
+        if (step.text) showSubtitle(step.text);
+        await playTtsText(step.text || "", step.speaker);
+        hideSubtitle();
+      } else if (step.type === "song") {
+        await playSong(step);
+      }
+    } catch (e) {
+      console.warn(`[playSegment] step ${step.type} failed, skipping`, e);
       hideSubtitle();
-    } else if (step.type === "song") {
-      await playSong(step);
+      // 1つの step が落ちても segment 全体は続行 → 次の step / 次の segment へ
     }
   }
 }
@@ -520,27 +545,34 @@ async function playSong(step) {
 
   // 曲が鳴り始めたので、次のセグメントをバックグラウンドで先取り
   if (ST.onAir && !ST.nextSegmentPromise) {
-    ST.nextSegmentPromise = fetchNextSegment();
-    ST.nextSegmentPromise.then((next) => {
-      if (next && next !== "stopped") showNextUp(next);
-    }).catch(() => {});
+    try {
+      ST.nextSegmentPromise = fetchNextSegment();
+      ST.nextSegmentPromise.then((next) => {
+        if (next && next !== "stopped") showNextUp(next);
+      }).catch(() => {});
+    } catch {}
   }
 
   // 曲開始と同時にイントロ被せ (ダッキング、sineで自然に)
   if (step.intro_tts) {
-    await sleep(300);
-    await rampVolume(1.0, 0.25, 250);
-    showSubtitle(step.intro_tts.text);
     try {
+      await sleep(300);
+      await rampVolume(1.0, 0.25, 250);
+      showSubtitle(step.intro_tts.text);
       await playTtsText(step.intro_tts.text, step.intro_tts.speaker);
     } catch (e) {
       console.warn("[tts] intro playback failed", e);
+    } finally {
+      hideSubtitle();
+      try { await rampVolume(0.25, 1.0, 800); } catch {}
     }
-    hideSubtitle();
-    await rampVolume(0.25, 1.0, 800);
   }
 
-  await waitSongEnd(step.duration_ms);
+  try {
+    await waitSongEnd(step.duration_ms);
+  } catch (e) {
+    console.warn("[waitSongEnd] threw, advancing", e);
+  }
 }
 
 async function startSpotifyPlay(uri) {
@@ -548,23 +580,25 @@ async function startSpotifyPlay(uri) {
     console.warn("[spotify] no device_id yet");
     return false;
   }
-  const r = await fetch("/api/spotify/play", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ uri }),
-  });
-  if (r.ok) return true;
-  const body = await r.text();
-  console.warn(`[spotify] /api/spotify/play → ${r.status} ${body}`);
-  return false;
+  try {
+    const r = await fetch("/api/spotify/play", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ uri }),
+    });
+    if (r.ok) return true;
+    let body = "";
+    try { body = await r.text(); } catch {}
+    console.warn(`[spotify] /api/spotify/play → ${r.status} ${body}`);
+    return false;
+  } catch (e) {
+    console.warn("[spotify] play fetch threw", e);
+    return false;
+  }
 }
 
-/** 曲の終了を待つ。3つの終了条件で確実に抜ける:
- *   (1) Spotify state.position が duration-500ms 以上 (= 曲終端)
- *   (2) Spotify state.position が一度動いた後、長時間 paused + position=0 (= SDK が曲を自動停止)
- *   (3) 壁時計で (knownDuration + 3000ms) 超過 (= SDK が応答しない場合のセーフティ)
- *   (4) 絶対上限 8分 (= duration=0 のリクエスト曲フォールバック)
- */
+/** 曲の終了を待つ。誤った早期終了を避けるため、 paused判定は緩めに、
+ *  最後は壁時計 + 絶対上限で必ず抜ける。 */
 function waitSongEnd(initialDurationMs) {
   return new Promise(async (resolve) => {
     const wallStart = Date.now();
@@ -582,15 +616,16 @@ function waitSongEnd(initialDurationMs) {
       if (state && typeof state.duration === "number" && state.duration > 0) {
         knownDuration = state.duration;
         updateProgress(state.position, state.duration);
-        if (state.position > 1000) positionEverMoved = true;
+        if (state.position > 1500) positionEverMoved = true;
 
         // (1) 終端到達
         if (state.position >= state.duration - 500) return finish();
 
-        // (2) 一度動いた後の paused + position=0 が 2.5秒続いたら次曲扱い
+        // (2) 一度しっかり動いた後の paused + position=0 が 5秒続いたら終了扱い
+        //     (一時的な buffering で paused 表示する事があるので 2.5s → 5s に緩和)
         if (positionEverMoved && state.paused && state.position === 0) {
           if (!lastPausedZeroAt) lastPausedZeroAt = Date.now();
-          else if (Date.now() - lastPausedZeroAt > 2500) return finish();
+          else if (Date.now() - lastPausedZeroAt > 5000) return finish();
         } else {
           lastPausedZeroAt = 0;
         }
@@ -598,10 +633,10 @@ function waitSongEnd(initialDurationMs) {
         updateProgress(elapsed, knownDuration);
       }
 
-      // (3) 壁時計でduration超過
-      if (knownDuration > 0 && elapsed > knownDuration + 3000) return finish();
-      // (4) 絶対上限
-      if (elapsed > 8 * 60 * 1000) return finish();
+      // (3) 壁時計で duration を 5秒以上超過したら強制終了
+      if (knownDuration > 0 && elapsed > knownDuration + 5000) return finish();
+      // (4) 絶対上限 10分
+      if (elapsed > 10 * 60 * 1000) return finish();
 
       await sleep(500);
     }
