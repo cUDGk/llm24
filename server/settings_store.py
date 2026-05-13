@@ -35,8 +35,12 @@ DEFAULTS: dict[str, Any] = {
     # 自分の Spotify Top Tracks をプールに混ぜるか。
     "use_user_top": False,
     # 1ジャンル何曲連続で流すか。設定 genres を順に消化していく。
-    # 大きくすると系統感が強く、小さくすると多様性が増す。
     "genre_run_length": 4,
+    # 許可する言語コード。タイトル+アーティスト名の文字種で判定。
+    # "ja" (日本語), "en" (英語/ローマ字), "ko" (韓国), "zh" (中国),
+    # "ru" (キリル), "ar" (アラビア), "other"
+    # デフォは日本語+英語のみ (ロシア/中国/韓国の偏りを避ける)
+    "allowed_languages": ["ja", "en"],
 }
 
 

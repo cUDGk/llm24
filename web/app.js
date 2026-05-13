@@ -914,6 +914,11 @@ async function loadSettings() {
   $("s-chat-freq").value = s.chat_frequency || "normal";
   $("s-mail-adopt").value = s.mail_adoption || "every_few";
   $("s-jingle").checked = s.jingle_enabled !== false;
+
+  const allowed = new Set(s.allowed_languages || []);
+  for (const cb of document.querySelectorAll("[data-lang]")) {
+    cb.checked = allowed.has(cb.value);
+  }
 }
 
 $("settings-form").addEventListener("submit", async (e) => {
@@ -930,6 +935,7 @@ $("settings-form").addEventListener("submit", async (e) => {
     chat_frequency: $("s-chat-freq").value,
     mail_adoption: $("s-mail-adopt").value,
     jingle_enabled: $("s-jingle").checked,
+    allowed_languages: Array.from(document.querySelectorAll("[data-lang]:checked")).map((cb) => cb.value),
   };
   const r = await fetch("/api/settings", {
     method: "PUT",

@@ -480,6 +480,19 @@ details[open] summary::before { content: "− "; color: var(--accent); }
   line-height: 1.4;
 }
 
+.lang-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.35rem 0.6rem;
+  margin-top: 0.3rem;
+}
+.lang-check {
+  display: flex; align-items: center; gap: 0.4rem;
+  font-size: 0.82rem;
+  cursor: pointer;
+}
+.lang-check input { width: 1rem; height: 1rem; accent-color: var(--fg); }
+
 /* ジャンル一覧パネル */
 .picker { margin-top: 0.4rem; }
 .picker > summary {

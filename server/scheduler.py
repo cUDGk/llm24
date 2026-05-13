@@ -17,11 +17,52 @@ from __future__ import annotations
 
 import asyncio
 import random
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote
+
+
+_RE_HIRAGANA = re.compile(r"[぀-ゟ]")
+_RE_KATAKANA = re.compile(r"[゠-ヿ]")
+_RE_CJK = re.compile(r"[一-鿿]")
+_RE_HANGUL = re.compile(r"[가-힯ᄀ-ᇿ]")
+_RE_CYRILLIC = re.compile(r"[Ѐ-ӿ]")
+_RE_ARABIC = re.compile(r"[؀-ۿ]")
+_RE_THAI = re.compile(r"[฀-๿]")
+_RE_DEVANAGARI = re.compile(r"[ऀ-ॿ]")
+
+
+def _detect_lang(text: str) -> str:
+    """タイトル+アーティスト文字列から大まかな言語を推定。"""
+    if not text:
+        return "en"
+    if _RE_HIRAGANA.search(text) or _RE_KATAKANA.search(text):
+        return "ja"  # ひらカナがあれば日本語確定
+    if _RE_HANGUL.search(text):
+        return "ko"
+    if _RE_CYRILLIC.search(text):
+        return "ru"
+    if _RE_ARABIC.search(text):
+        return "ar"
+    if _RE_THAI.search(text):
+        return "th"
+    if _RE_DEVANAGARI.search(text):
+        return "hi"
+    if _RE_CJK.search(text):
+        # 漢字のみ → 日本語か中国語か曖昧。ここではアプリの主市場が日本なので "ja" 扱い
+        return "ja"
+    return "en"
+
+
+def _is_allowed_language(track: dict, allowed: list[str]) -> bool:
+    if not allowed:
+        return True
+    text = f"{track.get('artist','')} {track.get('title','')}"
+    lang = _detect_lang(text)
+    return lang in allowed
 
 from . import claude_sdk, db, mail_queue, persona, spotify, voicevox
 from .config import ASSETS_DIR
@@ -181,8 +222,12 @@ async def _pick_from_charts(settings: dict, active_mail: dict | None) -> dict | 
     exclude = settings.get("exclude", {}) or {}
     ex_artists = {a.lower() for a in exclude.get("artists", [])}
     ex_keywords = [k.lower() for k in exclude.get("keywords", [])]
+    allowed_languages = settings.get("allowed_languages") or []
 
     candidates = await _build_candidate_pool(settings)
+    # 言語フィルタ
+    if allowed_languages:
+        candidates = [t for t in candidates if _is_allowed_language(t, allowed_languages)]
     if not candidates:
         return None
 
