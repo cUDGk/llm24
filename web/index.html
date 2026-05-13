@@ -85,18 +85,18 @@
       <details class="acc">
         <summary class="cell-h"><span data-i18n="settings">設定</span></summary>
         <form id="settings-form" class="settings-form">
-          <label class="field">
-            <span data-i18n="genres">ジャンル (カンマ区切り)</span>
-            <input id="s-genres" type="text">
-          </label>
-          <label class="field">
-            <span data-i18n="seed_artists">推しアーティスト (カンマ区切り、空でジャンル選曲のみ)</span>
-            <input id="s-seed-art" type="text">
-          </label>
-          <label class="field">
-            <span data-i18n="excl_artists">除外アーティスト (カンマ区切り)</span>
-            <input id="s-excl-art" type="text">
-          </label>
+          <div class="field">
+            <span data-i18n="genres">ジャンル</span>
+            <div id="s-genres-chips" class="chip-input" data-placeholder="入力してEnterで追加"></div>
+          </div>
+          <div class="field">
+            <span data-i18n="seed_artists">推しアーティスト (空でジャンル選曲のみ)</span>
+            <div id="s-seed-art-chips" class="chip-input" data-placeholder="入力してEnterで追加"></div>
+          </div>
+          <div class="field">
+            <span data-i18n="excl_artists">除外アーティスト</span>
+            <div id="s-excl-art-chips" class="chip-input" data-placeholder="入力してEnterで追加"></div>
+          </div>
           <label class="field">
             <span data-i18n="personality">性格カスタム</span>
             <input id="s-personality" type="text">

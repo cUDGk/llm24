@@ -79,9 +79,9 @@ const I18N = {
     sent_mails: "投函済み",
     tag_queued: "未読", tag_read: "読了", tag_consumed: "消化",
     recent: "最近の曲", settings: "設定", open_settings: "設定を開く",
-    genres: "ジャンル (カンマ区切り)",
-    seed_artists: "推しアーティスト (カンマ区切り、空でジャンル選曲のみ)",
-    excl_artists: "除外アーティスト (カンマ区切り)",
+    genres: "ジャンル",
+    seed_artists: "推しアーティスト (空でジャンル選曲のみ)",
+    excl_artists: "除外アーティスト",
     personality: "性格カスタム", chat_freq: "雑談頻度",
     freq_loose: "緩い", freq_normal: "普通", freq_dense: "多め",
     mail_adoption: "お便り採用率",
@@ -107,9 +107,9 @@ const I18N = {
     sent_mails: "SENT MAILS",
     tag_queued: "QUEUED", tag_read: "READ", tag_consumed: "READ",
     recent: "RECENT", settings: "SETTINGS", open_settings: "Open settings",
-    genres: "Genres (comma-separated)",
-    seed_artists: "Seed artists (comma-separated, empty = genre only)",
-    excl_artists: "Excluded artists (comma-separated)",
+    genres: "Genres",
+    seed_artists: "Seed artists (empty = genre only)",
+    excl_artists: "Excluded artists",
     personality: "Personality custom", chat_freq: "Chat frequency",
     freq_loose: "loose", freq_normal: "normal", freq_dense: "dense",
     mail_adoption: "Mail adoption rate",
@@ -729,12 +729,84 @@ async function refreshMails() {
 
 // ----- settings
 
+// ChipInput: テキスト+Enter/カンマで chip 追加、× で削除
+class ChipInput {
+  constructor(el) {
+    this.el = el;
+    this.chips = [];
+    this.input = document.createElement("input");
+    this.input.type = "text";
+    this.input.className = "chip-input-text";
+    this.input.placeholder = el.dataset.placeholder || "";
+    this.input.addEventListener("keydown", (e) => this._onKey(e));
+    this.input.addEventListener("blur", () => this._flush());
+    el.addEventListener("click", (e) => {
+      if (e.target === el) this.input.focus();
+    });
+    el.appendChild(this.input);
+  }
+  _onKey(e) {
+    if (e.key === "Enter" || e.key === "," || e.key === "、") {
+      e.preventDefault();
+      this._flush();
+    } else if (e.key === "Backspace" && this.input.value === "" && this.chips.length > 0) {
+      this.chips.pop();
+      this._render();
+    }
+  }
+  _flush() {
+    const raw = this.input.value;
+    // カンマ含みでまとめて追加可
+    for (const part of raw.split(/[,、]/)) {
+      const v = part.trim();
+      if (v && !this.chips.includes(v)) this.chips.push(v);
+    }
+    this.input.value = "";
+    this._render();
+  }
+  _render() {
+    this.el.querySelectorAll(".chip").forEach((el) => el.remove());
+    for (const v of this.chips) {
+      const chip = document.createElement("span");
+      chip.className = "chip";
+      const txt = document.createElement("span");
+      txt.className = "chip-text";
+      txt.textContent = v;
+      const x = document.createElement("button");
+      x.type = "button";
+      x.className = "chip-x";
+      x.textContent = "×";
+      x.addEventListener("click", () => {
+        this.chips = this.chips.filter((c) => c !== v);
+        this._render();
+      });
+      chip.appendChild(txt);
+      chip.appendChild(x);
+      this.el.insertBefore(chip, this.input);
+    }
+  }
+  set(values) {
+    this.chips = (values || []).slice();
+    this._render();
+  }
+  values() {
+    this._flush();
+    return this.chips.slice();
+  }
+}
+
+ST.chipInputs = {
+  genres: new ChipInput($("s-genres-chips")),
+  seed: new ChipInput($("s-seed-art-chips")),
+  excl: new ChipInput($("s-excl-art-chips")),
+};
+
 async function loadSettings() {
   const r = await fetch("/api/settings");
   const s = await r.json();
-  $("s-genres").value = (s.genres || []).join(", ");
-  $("s-seed-art").value = (s.seed_artists || []).join(", ");
-  $("s-excl-art").value = (s.exclude?.artists || []).join(", ");
+  ST.chipInputs.genres.set(s.genres);
+  ST.chipInputs.seed.set(s.seed_artists);
+  ST.chipInputs.excl.set(s.exclude?.artists);
   $("s-personality").value = s.personality_custom || "";
   $("s-chat-freq").value = s.chat_frequency || "normal";
   $("s-mail-adopt").value = s.mail_adoption || "every_few";
@@ -744,10 +816,10 @@ async function loadSettings() {
 $("settings-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const payload = {
-    genres: $("s-genres").value.split(",").map((x) => x.trim()).filter(Boolean),
-    seed_artists: $("s-seed-art").value.split(",").map((x) => x.trim()).filter(Boolean),
+    genres: ST.chipInputs.genres.values(),
+    seed_artists: ST.chipInputs.seed.values(),
     exclude: {
-      artists: $("s-excl-art").value.split(",").map((x) => x.trim()).filter(Boolean),
+      artists: ST.chipInputs.excl.values(),
       genres: [],
       keywords: [],
     },

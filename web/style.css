@@ -387,6 +387,51 @@ a { color: inherit; }
 
 /* SETTINGS */
 .settings-form { display: flex; flex-direction: column; gap: 0.45rem; margin-top: 0.5rem; }
+/* チップ入力 (メルカリ風) */
+.chip-input {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  padding: 0.35rem 0.4rem;
+  border: 2px solid var(--rule);
+  min-height: 2.3rem;
+  align-items: center;
+  cursor: text;
+  background: transparent;
+}
+.chip-input:focus-within { border-color: var(--fg); }
+.chip-input-text {
+  border: none !important;
+  flex: 1 1 8em;
+  outline: none;
+  padding: 0.15rem 0.25rem !important;
+  background: transparent;
+  min-width: 6em;
+  font-size: 0.85rem;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid var(--rule);
+  padding: 0.1rem 0.2rem 0.1rem 0.55rem;
+  font-size: 0.78rem;
+  background: var(--art-fb-bg);
+  font-weight: 500;
+}
+.chip-text { color: var(--fg); white-space: nowrap; }
+.chip-x {
+  border: none !important;
+  background: transparent;
+  padding: 0.05rem 0.3rem !important;
+  cursor: pointer;
+  font-size: 0.95rem;
+  color: var(--dim);
+  line-height: 1;
+  font-weight: 600;
+}
+.chip-x:hover { color: var(--accent); background: transparent; }
+
 details summary {
   cursor: pointer;
   font-family: "Cinzel", serif;
