@@ -312,9 +312,11 @@ async def get_top_tracks(time_range: str = "medium_term", limit: int = 50) -> li
 
 
 async def search_by_genre(genre: str, market: str = "JP") -> list[dict]:
-    """ジャンル名 (フリーテキスト) で track 検索。1時間キャッシュ。
-    Spotifyの公式 'genre:' filter は限定されたタグでしか動かないので、フリーテキストsearch
-    の方が日本語ジャンル名 (シティポップ等) に対応できる。"""
+    """Spotify の `genre:` filter で track 検索。1時間キャッシュ。
+    `genre:"j-pop"` のようにアーティストのジャンルメタに対して絞り込むので、
+    曲名やアーティスト名がジャンル文字列を含むだけで誤ヒットすることが無くなる。
+    フィルタで0件だったらフリーテキスト検索にフォールバック。
+    """
     from . import db
     cache_key = f"{market}:{genre}"
     cached = await db.cache_get("genre_tracks", cache_key)
@@ -323,14 +325,27 @@ async def search_by_genre(genre: str, market: str = "JP") -> list[dict]:
 
     token = await get_access_token()
     async with httpx.AsyncClient(timeout=10.0) as client:
+        # 1次: genre filter (精度高)
         r = await client.get(
             "https://api.spotify.com/v1/search",
-            params={"q": genre, "type": "track", "limit": 10, "market": market},
+            params={"q": f'genre:"{genre}"', "type": "track", "limit": 10, "market": market},
             headers={"Authorization": f"Bearer {token}"},
         )
-        if r.status_code != 200:
-            raise SpotifyError(f"genre search failed: {r.status_code} {r.text}")
-        items = r.json().get("tracks", {}).get("items", [])
+        items: list[dict] = []
+        if r.status_code == 200:
+            items = r.json().get("tracks", {}).get("items", [])
+
+        # 2次: 0件ならフリーテキスト (Spotify非公式ジャンル名対応用フォールバック)
+        if not items:
+            r2 = await client.get(
+                "https://api.spotify.com/v1/search",
+                params={"q": genre, "type": "track", "limit": 10, "market": market},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if r2.status_code != 200:
+                raise SpotifyError(f"genre search failed: {r2.status_code} {r2.text}")
+            items = r2.json().get("tracks", {}).get("items", [])
+
         normalized = [_normalize_track(t) for t in items if t and t.get("id")]
 
     await db.cache_put("genre_tracks", cache_key, normalized, ttl_seconds=3600)

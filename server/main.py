@@ -192,6 +192,36 @@ async def api_settings_put(payload: dict[str, Any]):
     return updated
 
 
+# ----- TTS on-demand (frontend hybrid JA/EN renderer) -----
+
+from . import voicevox as _voicevox
+from .persona import current_persona as _current_persona
+
+
+class TtsIn(BaseModel):
+    text: str
+    speaker: int | None = None
+
+
+@app.post("/api/tts")
+async def api_tts(payload: TtsIn):
+    """フロントから日本語パートを送って VOICEVOX で WAV化。
+    speaker 未指定なら時間帯ペルソナのデフォルトを使う。"""
+    text = payload.text.strip()
+    if not text:
+        raise HTTPException(400, "empty text")
+    speaker = payload.speaker
+    if speaker is None:
+        from datetime import datetime
+        p = _current_persona(datetime.now())
+        speaker = p.default_speaker_id
+    try:
+        path = await _voicevox.synthesize(text, int(speaker))
+    except _voicevox.VoicevoxError as e:
+        raise HTTPException(502, str(e)) from e
+    return FileResponse(path, media_type="audio/wav")
+
+
 # ----- Spotify playback (server-side proxy so errors land in logs) -----
 
 _client_device_id: str | None = None

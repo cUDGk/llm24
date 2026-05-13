@@ -315,20 +315,9 @@ async function loop() {
           throw new Error("segment fetch failed");
         }
 
-        // 曲が含まれるセグメントなら、再生中に次の segment を先取りする
-        const hasSong = (seg.steps || []).some((s) => s && s.type === "song");
-        if (hasSong) {
-          setTimeout(async () => {
-            if (ST.onAir && !ST.nextSegmentPromise) {
-              ST.nextSegmentPromise = fetchNextSegment();
-              // プリフェッチが返ったら次曲プレビュー表示
-              const nextSeg = await ST.nextSegmentPromise;
-              if (nextSeg && nextSeg !== "stopped") showNextUp(nextSeg);
-            }
-          }, 15000);
-        }
-
         clearNextUp();
+        // playSegment 内で song step に入ったタイミングでバックグラウンド prefetch する。
+        // setTimeout は使わない (race と多重発火の元なので)。
         await playSegment(seg);
       } catch (e) {
         showLoading(false);
@@ -418,28 +407,85 @@ async function playSegment(seg) {
     if (!step) continue;
     if (!ST.onAir) return;
     if (step.type === "jingle") {
-      await playSampleUrl(step.url, { duck: false, text: "" });
+      await playSampleUrl(step.url);
     } else if (step.type === "tts") {
-      await playSampleUrl(step.url, {
-        duck: step.ducking === "intro",
-        text: step.text || "",
-      });
+      if (step.text) showSubtitle(step.text);
+      await playTtsText(step.text || "", step.speaker);
+      hideSubtitle();
     } else if (step.type === "song") {
       await playSong(step);
     }
   }
 }
 
-async function playSampleUrl(url, { duck = false, text = "" } = {}) {
+async function playSampleUrl(url) {
+  // 固定wav (jingle等) を再生するだけ
   const buf = await fetchAudioBuffer(url);
-  if (duck && ST.player) {
-    await rampVolume(1.0, 0.25, 250);
-  }
-  if (text) showSubtitle(text);
   await playBuffer(buf);
-  hideSubtitle();
-  if (duck && ST.player) {
-    await rampVolume(0.25, 1.0, 800);
+}
+
+/** 英語連続部分は Web Speech API (en-US)、日本語部分は VOICEVOX で交互に再生。 */
+async function playTtsText(text, speaker) {
+  if (!text || !text.trim()) return;
+  const parts = splitJaEn(text);
+  for (const p of parts) {
+    if (!ST.onAir) return;
+    if (p.lang === "en") await speakEn(p.text);
+    else await speakJa(p.text, speaker);
+  }
+}
+
+function splitJaEn(text) {
+  // 連続するASCII文字(英語パート)を抜き出し、それ以外は日本語パート
+  const parts = [];
+  // 英単語+続く空白/記号(2文字以上連続) を1つの英語ブロックに
+  const re = /[A-Za-z][A-Za-z0-9'’.&\-!?\/\s]*[A-Za-z0-9'’!?.]|[A-Za-z]/g;
+  let last = 0;
+  let m;
+  while ((m = re.exec(text))) {
+    if (m.index > last) {
+      const ja = text.slice(last, m.index);
+      if (ja) parts.push({ lang: "ja", text: ja });
+    }
+    parts.push({ lang: "en", text: m[0].trim() });
+    last = m.index + m[0].length;
+  }
+  if (last < text.length) parts.push({ lang: "ja", text: text.slice(last) });
+  // 連続する同言語をまとめ、空白だけのjaは前後の英語に付けない
+  return parts.filter((p) => p.text && p.text.trim().length > 0);
+}
+
+function speakEn(text) {
+  return new Promise((resolve) => {
+    if (!("speechSynthesis" in window)) return resolve();
+    const u = new SpeechSynthesisUtterance(text);
+    u.lang = "en-US";
+    u.rate = 1.05;
+    u.pitch = 1.0;
+    u.onend = resolve;
+    u.onerror = () => resolve();
+    try { window.speechSynthesis.cancel(); } catch {}
+    window.speechSynthesis.speak(u);
+  });
+}
+
+async function speakJa(text, speaker) {
+  try {
+    const body = JSON.stringify({ text, speaker: speaker || null });
+    const r = await fetch("/api/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body,
+    });
+    if (!r.ok) {
+      console.warn("[tts:ja] /api/tts", r.status);
+      return;
+    }
+    const arr = await r.arrayBuffer();
+    const buf = await ST.audioCtx.decodeAudioData(arr);
+    await playBuffer(buf);
+  } catch (e) {
+    console.warn("[tts:ja] failed", e);
   }
 }
 
@@ -515,19 +561,25 @@ async function playSong(step) {
     return;
   }
 
+  // 曲が鳴り始めたので、次のセグメントをバックグラウンドで先取り
+  if (ST.onAir && !ST.nextSegmentPromise) {
+    ST.nextSegmentPromise = fetchNextSegment();
+    ST.nextSegmentPromise.then((next) => {
+      if (next && next !== "stopped") showNextUp(next);
+    }).catch(() => {});
+  }
+
   // 曲開始と同時にイントロ被せ (ダッキング、sineで自然に)
   if (step.intro_tts) {
     await sleep(300);
     await rampVolume(1.0, 0.25, 250);
     showSubtitle(step.intro_tts.text);
     try {
-      const buf = await fetchAudioBuffer(step.intro_tts.url);
-      await playBuffer(buf);
+      await playTtsText(step.intro_tts.text, step.intro_tts.speaker);
     } catch (e) {
       console.warn("[tts] intro playback failed", e);
     }
     hideSubtitle();
-    // サイン波 ease-in-out で 800ms かけてフェードイン
     await rampVolume(0.25, 1.0, 800);
   }
 
@@ -738,6 +790,7 @@ class ChipInput {
     this.input.type = "text";
     this.input.className = "chip-input-text";
     this.input.placeholder = el.dataset.placeholder || "";
+    if (el.dataset.list) this.input.setAttribute("list", el.dataset.list);
     this.input.addEventListener("keydown", (e) => this._onKey(e));
     this.input.addEventListener("blur", () => this._flush());
     el.addEventListener("click", (e) => {

@@ -84,16 +84,11 @@ async def _build_time_signal(now: datetime, settings: dict) -> dict[str, Any]:
     p = persona.current_persona(now)
     speaker = _voice_id(settings, p.slot, p.default_speaker_id)
     text = _hour_label(now)
-    tts_path = await voicevox.synthesize(text, speaker)
-    return {
-        "kind": "time_signal",
-        "persona": p.slot,
-        "steps": [
-            {"type": "jingle", "url": "/assets/jingle_time.wav"} if settings.get("jingle_enabled", True) else None,
-            {"type": "tts", "url": _cache_url(tts_path), "text": text},
-        ],
-        "next_song": None,
-    }
+    steps = []
+    if settings.get("jingle_enabled", True):
+        steps.append({"type": "jingle", "url": "/assets/jingle_time.wav"})
+    steps.append({"type": "tts", "text": text, "speaker": speaker})
+    return {"kind": "time_signal", "persona": p.slot, "steps": steps, "next_song": None}
 
 
 def _voice_id(settings: dict, slot: str, default: int) -> int:
@@ -319,8 +314,6 @@ async def _build_song_segment(
     intro_text = intro["text"]
     intro_summary = intro.get("summary", intro_text[:20])
 
-    intro_tts = await voicevox.synthesize(intro_text, speaker)
-
     # 履歴記録
     await db.add_play(track["id"], track["artist"], track["title"])
     await db.add_script(kind="intro", content=intro_text, summary=intro_summary)
@@ -328,19 +321,16 @@ async def _build_song_segment(
         await mail_queue.consume_mail(active_mail["id"])
 
     _state.idx += 1
-    # ジャンルローテーション進行 (リクエスト曲は除外: active_mail があるとき)
     if not active_mail:
         _advance_genre_rotation(settings)
 
-    # お便り部分は曲の前に逐次再生 (jingle → mail本文 → 曲振り は曲と同時)
+    # お便り部分は曲の前に逐次再生 (jingle → mail本文 → 曲と同時に intro)
     steps: list[dict[str, Any]] = []
     if mail_intro_text:
         if settings.get("jingle_enabled", True):
             steps.append({"type": "jingle", "url": "/assets/jingle_mail.wav"})
-        mail_tts = await voicevox.synthesize(mail_intro_text, speaker)
-        steps.append({"type": "tts", "url": _cache_url(mail_tts), "text": mail_intro_text})
+        steps.append({"type": "tts", "text": mail_intro_text, "speaker": speaker})
 
-    # 曲振り TTS は song step に内包 → 曲開始と同時にダッキング再生
     steps.append({
         "type": "song",
         "spotify_uri": track["uri"],
@@ -349,7 +339,7 @@ async def _build_song_segment(
         "artist": track["artist"],
         "title": track["title"],
         "album_image": track["album_image"],
-        "intro_tts": {"url": _cache_url(intro_tts), "text": intro_text},
+        "intro_tts": {"text": intro_text, "speaker": speaker},
     })
 
     return {
@@ -370,15 +360,12 @@ async def _build_chat_segment(settings: dict, now: datetime) -> dict[str, Any]:
         last_played=recent,
         recent_summaries=summaries,
     )
-    tts_path = await voicevox.synthesize(chat["text"], speaker)
     await db.add_script(kind="chat", content=chat["text"], summary=chat.get("summary"))
     _state.last_chat_at_idx = _state.idx
     return {
         "kind": "chat",
         "persona": p.slot,
-        "steps": [
-            {"type": "tts", "url": _cache_url(tts_path), "text": chat["text"]},
-        ],
+        "steps": [{"type": "tts", "text": chat["text"], "speaker": speaker}],
         "next_song": None,
     }
 
@@ -415,23 +402,12 @@ async def _build_fallback_segment(settings: dict, now: datetime, reason: str) ->
     p = persona.current_persona(now)
     speaker = _voice_id(settings, p.slot, p.default_speaker_id)
     text = random.choice(FALLBACK_LINES)
-    try:
-        tts_path = await voicevox.synthesize(text, speaker)
-        return {
-            "kind": "fallback",
-            "persona": p.slot,
-            "steps": [{"type": "tts", "url": _cache_url(tts_path), "text": text}],
-            "next_song": None,
-        }
-    except Exception as e:
-        # VOICEVOX も死んでたらせめて空 segment を返す (フロントが即next-segmentする)
-        print(f"[scheduler] fallback TTS also failed: {e}", flush=True)
-        return {
-            "kind": "fallback",
-            "persona": p.slot,
-            "steps": [],
-            "next_song": None,
-        }
+    return {
+        "kind": "fallback",
+        "persona": p.slot,
+        "steps": [{"type": "tts", "text": text, "speaker": speaker}],
+        "next_song": None,
+    }
 
 
 # ---- public ----
