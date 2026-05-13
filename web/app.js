@@ -155,6 +155,11 @@ async function fetchToken() {
 // ----- Spotify SDK
 
 window.onSpotifyWebPlaybackSDKReady = async () => {
+  await initSpotifyPlayer();
+};
+
+async function initSpotifyPlayer() {
+  if (ST.player) return;  // 既に初期化済み
   ST.token = await fetchToken();
   if (!ST.token) return;
 
@@ -167,9 +172,14 @@ window.onSpotifyWebPlaybackSDKReady = async () => {
   ST.player.addListener("ready", async ({ device_id }) => {
     ST.deviceId = device_id;
     console.log("[spotify] device ready:", device_id);
-    // device ready = 完全に認証通った状態。 login ボタンは絶対に隠す
     $("btn-spotify-login").hidden = true;
     $("btn-toggle").hidden = false;
+    // autoplay policy 対策: 早めに HTMLMediaElement をアクティブ化しておく
+    try {
+      if (typeof ST.player.activateElement === "function") {
+        await ST.player.activateElement();
+      }
+    } catch {}
     try {
       await fetch("/api/spotify/device", {
         method: "POST",
@@ -196,7 +206,7 @@ window.onSpotifyWebPlaybackSDKReady = async () => {
   });
 
   await ST.player.connect();
-};
+}
 
 async function transferPlayback(deviceId, play = false) {
   const tok = await fetchToken();
@@ -221,10 +231,22 @@ async function startOnAir() {
     console.warn("[start] already on-air");
     return;
   }
+  // 完全停止後の再開: SDK が外れていれば再接続する
+  if (!ST.player) {
+    await initSpotifyPlayer();
+    // ready イベント待ち (最大5秒)
+    for (let i = 0; i < 25 && !ST.deviceId; i++) await sleep(200);
+  }
   if (!ST.deviceId) {
     alert(t("spotify_not_ready"));
     return;
   }
+  // activateElement (autoplay policy 対策、user-gesture内で実行)
+  try {
+    if (typeof ST.player.activateElement === "function") {
+      await ST.player.activateElement();
+    }
+  } catch {}
   if (!ST.audioCtx) {
     ST.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
   }
@@ -255,7 +277,10 @@ async function stopOnAir() {
       await sleep(120);
     }
     try { await ST.player.pause(); } catch {}
-    try { await ST.player.setVolume(1.0); } catch {}
+    // 完全停止: SDK を disconnect して Spotify Connect デバイス一覧から消す
+    try { await ST.player.disconnect(); } catch {}
+    ST.player = null;
+    ST.deviceId = null;
   }
 
   await playStopChime();

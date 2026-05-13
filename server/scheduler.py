@@ -36,6 +36,8 @@ class SchedulerState:
     last_chat_at_idx: int = -10
     last_active_mail: dict | None = None  # force/normal問わず直近に読んだお便り
     started: bool = False
+    current_genre_idx: int = 0          # 現在使ってる genre のインデックス
+    songs_in_current_genre: int = 0      # 現在 genre で連続して流した曲数
 
 
 _state = SchedulerState()
@@ -102,15 +104,31 @@ def _cache_url(path: Path) -> str:
     return f"/cache/{quote(path.name)}"
 
 
+def _active_genre(settings: dict) -> str | None:
+    """ローテーションで今使うべきジャンル。設定が空なら None。"""
+    genres = settings.get("genres", []) or []
+    if not genres:
+        return None
+    return genres[_state.current_genre_idx % len(genres)]
+
+
+def _advance_genre_rotation(settings: dict) -> None:
+    """song が1曲完了するごとに呼ぶ。run_length を超えたら次ジャンルへ。"""
+    run = max(1, int(settings.get("genre_run_length", 4)))
+    _state.songs_in_current_genre += 1
+    if _state.songs_in_current_genre >= run:
+        _state.songs_in_current_genre = 0
+        _state.current_genre_idx += 1
+
+
 async def _build_candidate_pool(settings: dict) -> list[dict]:
     """候補プール構築。並列取得 (キャッシュあり)。
     ソース (空のセクションはスキップ):
-      A. settings.genres (ジャンル名) で /search
+      A. ローテーション中の単一ジャンルで /search → 系統に一貫性
       B. settings.seed_artists (アーティスト名) で /search
       C. /me/top/tracks (settings.use_user_top=True の時のみ)
-    プールはランダムシャッフル。
     """
-    genres = settings.get("genres", []) or []
+    active_genre = _active_genre(settings)
     seeds = settings.get("seed_artists", []) or []
     use_top = bool(settings.get("use_user_top", False))
 
@@ -132,19 +150,23 @@ async def _build_candidate_pool(settings: dict) -> list[dict]:
         except spotify.SpotifyError:
             return []
 
-    tasks = [
-        asyncio.gather(*(_safe_genre(g) for g in genres)),
-        asyncio.gather(*(_safe_artist(n) for n in seeds)),
-    ]
+    tasks = []
+    if active_genre:
+        tasks.append(_safe_genre(active_genre))
+    if seeds:
+        tasks.append(asyncio.gather(*(_safe_artist(n) for n in seeds)))
     if use_top:
         tasks.append(asyncio.gather(_safe_top("medium_term"), _safe_top("short_term")))
 
+    if not tasks:
+        return []
     results = await asyncio.gather(*tasks)
 
     pool: list[dict] = []
     seen_ids: set[str] = set()
-    for group in results:
-        for tracks in group:
+    for r in results:
+        groups = r if isinstance(r, list) and r and isinstance(r[0], list) else [r]
+        for tracks in groups:
             for t in tracks:
                 if t["id"] in seen_ids:
                     continue
@@ -306,6 +328,9 @@ async def _build_song_segment(
         await mail_queue.consume_mail(active_mail["id"])
 
     _state.idx += 1
+    # ジャンルローテーション進行 (リクエスト曲は除外: active_mail があるとき)
+    if not active_mail:
+        _advance_genre_rotation(settings)
 
     # お便り部分は曲の前に逐次再生 (jingle → mail本文 → 曲振り は曲と同時)
     steps: list[dict[str, Any]] = []
