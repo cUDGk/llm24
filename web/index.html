@@ -89,10 +89,15 @@
             <span data-i18n="genres">ジャンル</span>
             <div id="s-genres-chips" class="chip-input" data-placeholder="自由入力もOK (Enterで確定)"></div>
             <details class="picker">
-              <summary>ジャンル一覧から選ぶ</summary>
+              <summary>ジャンル一覧から選ぶ (推奨)</summary>
               <div id="genre-picker-list" class="picker-list"></div>
             </details>
-            <div class="field-hint">公式タグは精度高、リストに無い文字列を直接入力すると曲名検索にフォールバック。</div>
+            <div class="field-hint">
+              一覧のタグ (Spotify公式) はアーティストのジャンルメタで絞り込むので精度高。<br>
+              一覧に無い文字列を入力すると曲名/アーティスト名のテキスト検索になり、
+              例えば「ダリアコア」と入れると曲名に「ダリア」を含む曲が誤ヒットしがち。
+              基本は一覧から選ぶのを推奨。
+            </div>
           </div>
           <div class="field">
             <span data-i18n="seed_artists">推しアーティスト (空でジャンル選曲のみ)</span>
