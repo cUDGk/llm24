@@ -790,7 +790,6 @@ class ChipInput {
     this.input.type = "text";
     this.input.className = "chip-input-text";
     this.input.placeholder = el.dataset.placeholder || "";
-    if (el.dataset.list) this.input.setAttribute("list", el.dataset.list);
     this.input.addEventListener("keydown", (e) => this._onKey(e));
     this.input.addEventListener("blur", () => this._flush());
     el.addEventListener("click", (e) => {
@@ -853,6 +852,42 @@ ST.chipInputs = {
   seed: new ChipInput($("s-seed-art-chips")),
   excl: new ChipInput($("s-excl-art-chips")),
 };
+
+// ChipInput に追加メソッド (外部から chip を追加)
+ChipInput.prototype.add = function (value) {
+  if (!value || this.chips.includes(value)) return;
+  this.chips.push(value);
+  this._render();
+};
+
+// ジャンル候補パネル: クリックで chip 追加
+const GENRE_OPTIONS = [
+  "j-pop", "j-rock", "j-rap", "j-idol", "anime", "city pop",
+  "shibuya-kei", "visual-kei", "kawaii future bass", "vocaloid",
+  "pop", "rock", "indie", "alternative", "hip-hop", "rap",
+  "r-n-b", "soul", "electronic", "dance", "edm", "house",
+  "techno", "trance", "drum-and-bass", "dubstep", "future-bass",
+  "ambient", "vaporwave", "lo-fi", "jazz", "classical",
+  "country", "folk", "blues", "funk", "disco", "metal", "punk",
+  "reggae", "latin", "k-pop", "afrobeat", "bossa nova",
+  "soundtrack", "hyperpop",
+];
+(function buildGenrePicker() {
+  const box = $("genre-picker-list");
+  if (!box) return;
+  for (const g of GENRE_OPTIONS) {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "picker-chip";
+    b.textContent = g;
+    b.addEventListener("click", () => {
+      ST.chipInputs.genres.add(g);
+      b.classList.add("added");
+      setTimeout(() => b.classList.remove("added"), 600);
+    });
+    box.appendChild(b);
+  }
+})();
 
 async function loadSettings() {
   const r = await fetch("/api/settings");

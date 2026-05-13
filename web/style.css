@@ -479,3 +479,46 @@ details[open] summary::before { content: "− "; color: var(--accent); }
   color: var(--dim);
   line-height: 1.4;
 }
+
+/* ジャンル一覧パネル */
+.picker { margin-top: 0.4rem; }
+.picker > summary {
+  cursor: pointer;
+  font-family: "Cinzel", serif;
+  font-weight: 600;
+  font-size: 0.7rem;
+  letter-spacing: 0.25em;
+  color: var(--dim);
+  list-style: none;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--rule);
+  display: inline-block;
+}
+.picker > summary::-webkit-details-marker { display: none; }
+.picker > summary::before { content: "+ "; }
+.picker[open] > summary::before { content: "− "; color: var(--accent); }
+.picker[open] > summary { color: var(--fg); border-color: var(--fg); }
+.picker-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-top: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid var(--rule);
+  background: var(--art-fb-bg);
+}
+.picker-chip {
+  font-size: 0.78rem;
+  padding: 0.2rem 0.55rem !important;
+  border: 1px solid var(--rule) !important;
+  background: var(--bg);
+  cursor: pointer;
+  transition: background 120ms, color 120ms, border-color 120ms;
+  font-weight: 500;
+}
+.picker-chip:hover { background: var(--fg); color: var(--bg); border-color: var(--fg) !important; }
+.picker-chip.added {
+  background: var(--accent) !important;
+  color: var(--bg) !important;
+  border-color: var(--accent) !important;
+}

@@ -87,57 +87,13 @@
         <form id="settings-form" class="settings-form">
           <div class="field">
             <span data-i18n="genres">ジャンル</span>
-            <div id="s-genres-chips" class="chip-input" data-placeholder="例: j-pop / city pop / 自由入力可" data-list="spotify-genres"></div>
-            <div class="field-hint">候補リストはSpotify公式タグの抜粋。リストに無い文字列を入力してもOK (内部で genre:"..." → 0件なら曲名検索にフォールバック)。</div>
+            <div id="s-genres-chips" class="chip-input" data-placeholder="自由入力もOK (Enterで確定)"></div>
+            <details class="picker">
+              <summary>ジャンル一覧から選ぶ</summary>
+              <div id="genre-picker-list" class="picker-list"></div>
+            </details>
+            <div class="field-hint">公式タグは精度高、リストに無い文字列を直接入力すると曲名検索にフォールバック。</div>
           </div>
-          <datalist id="spotify-genres">
-            <option value="j-pop"></option>
-            <option value="j-rock"></option>
-            <option value="j-rap"></option>
-            <option value="j-idol"></option>
-            <option value="anime"></option>
-            <option value="city pop"></option>
-            <option value="shibuya-kei"></option>
-            <option value="visual-kei"></option>
-            <option value="kawaii future bass"></option>
-            <option value="vocaloid"></option>
-            <option value="pop"></option>
-            <option value="rock"></option>
-            <option value="indie"></option>
-            <option value="alternative"></option>
-            <option value="hip-hop"></option>
-            <option value="rap"></option>
-            <option value="r-n-b"></option>
-            <option value="soul"></option>
-            <option value="electronic"></option>
-            <option value="dance"></option>
-            <option value="edm"></option>
-            <option value="house"></option>
-            <option value="techno"></option>
-            <option value="trance"></option>
-            <option value="drum-and-bass"></option>
-            <option value="dubstep"></option>
-            <option value="future-bass"></option>
-            <option value="ambient"></option>
-            <option value="vaporwave"></option>
-            <option value="lo-fi"></option>
-            <option value="jazz"></option>
-            <option value="classical"></option>
-            <option value="country"></option>
-            <option value="folk"></option>
-            <option value="blues"></option>
-            <option value="funk"></option>
-            <option value="disco"></option>
-            <option value="metal"></option>
-            <option value="punk"></option>
-            <option value="reggae"></option>
-            <option value="latin"></option>
-            <option value="k-pop"></option>
-            <option value="afrobeat"></option>
-            <option value="bossa nova"></option>
-            <option value="soundtrack"></option>
-            <option value="hyperpop"></option>
-          </datalist>
           <div class="field">
             <span data-i18n="seed_artists">推しアーティスト (空でジャンル選曲のみ)</span>
             <div id="s-seed-art-chips" class="chip-input" data-placeholder="入力してEnterで追加"></div>
