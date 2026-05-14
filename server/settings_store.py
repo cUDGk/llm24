@@ -44,6 +44,13 @@ DEFAULTS: dict[str, Any] = {
     # "ru" (キリル), "ar" (アラビア), "other"
     # デフォは日本語+英語のみ (ロシア/中国/韓国の偏りを避ける)
     "allowed_languages": ["ja", "en"],
+    # 再生モード:
+    #   rotation       既存。 設定 genres を順番にローテ (genre_run_length 曲ごと切替)
+    #   single-genre   先頭ジャンル1つだけを永続的に流す
+    #   single-artist  radio_artist で指定したアーティストの曲だけ流す
+    "play_mode": "rotation",
+    # single-artist モードで使うアーティスト名
+    "radio_artist": "",
 }
 
 

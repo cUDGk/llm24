@@ -85,6 +85,8 @@ const I18N = {
     personality: "性格カスタム", chat_freq: "雑談頻度",
     freq_loose: "緩い", freq_normal: "普通", freq_dense: "多め",
     intro_every: "曲振りトークの頻度",
+    play_mode: "再生モード",
+    radio_artist: "アーティストラジオの対象 (single-artist のみ)",
     mail_adoption: "お便り採用率",
     adopt_every: "毎回", adopt_few: "数曲に1回", adopt_full: "溜まったら",
     jingle_on: "時報ジングル ON", save: "保 存", save_ok: "保存しました",
@@ -114,6 +116,8 @@ const I18N = {
     personality: "Personality custom", chat_freq: "Chat frequency",
     freq_loose: "loose", freq_normal: "normal", freq_dense: "dense",
     intro_every: "DJ talk frequency",
+    play_mode: "Play mode",
+    radio_artist: "Radio artist (single-artist mode)",
     mail_adoption: "Mail adoption rate",
     adopt_every: "every track", adopt_few: "every few tracks", adopt_full: "when queue is full",
     jingle_on: "Time-signal jingle ON", save: "SAVE", save_ok: "saved",
@@ -925,6 +929,8 @@ async function loadSettings() {
   $("s-chat-freq").value = s.chat_frequency || "normal";
   $("s-mail-adopt").value = s.mail_adoption || "every_few";
   $("s-intro-every").value = String(s.intro_every || 1);
+  $("s-play-mode").value = s.play_mode || "rotation";
+  $("s-radio-artist").value = s.radio_artist || "";
   $("s-jingle").checked = s.jingle_enabled !== false;
 
   const allowed = new Set(s.allowed_languages || []);
@@ -947,6 +953,8 @@ $("settings-form").addEventListener("submit", async (e) => {
     chat_frequency: $("s-chat-freq").value,
     mail_adoption: $("s-mail-adopt").value,
     intro_every: parseInt($("s-intro-every").value, 10) || 1,
+    play_mode: $("s-play-mode").value,
+    radio_artist: $("s-radio-artist").value.trim(),
     jingle_enabled: $("s-jingle").checked,
     allowed_languages: Array.from(document.querySelectorAll("[data-lang]:checked")).map((cb) => cb.value),
   };

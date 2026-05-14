@@ -110,6 +110,18 @@
             <input id="s-personality" type="text">
           </label>
           <label class="field">
+            <span data-i18n="play_mode">再生モード</span>
+            <select id="s-play-mode">
+              <option value="rotation" selected>ジャンルローテーション</option>
+              <option value="single-genre">単一ジャンル固定</option>
+              <option value="single-artist">アーティストラジオ (指定アーティストの曲のみ)</option>
+            </select>
+          </label>
+          <label class="field">
+            <span data-i18n="radio_artist">アーティストラジオの対象 (single-artist のみ)</span>
+            <input id="s-radio-artist" type="text" placeholder="例: YOASOBI">
+          </label>
+          <label class="field">
             <span data-i18n="chat_freq">雑談頻度</span>
             <select id="s-chat-freq">
               <option value="loose" data-i18n="freq_loose">緩い</option>

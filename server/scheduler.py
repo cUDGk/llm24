@@ -232,11 +232,34 @@ def _advance_genre_rotation(settings: dict) -> None:
 
 async def _build_candidate_pool(settings: dict) -> list[dict]:
     """候補プール構築。並列取得 (キャッシュあり)。
-    ソース (空のセクションはスキップ):
-      A. ローテーション中の単一ジャンルで /search → 系統に一貫性
-      B. settings.seed_artists (アーティスト名) で /search
-      C. /me/top/tracks (settings.use_user_top=True の時のみ)
+    play_mode に応じてソースを変える:
+      rotation:       active_genre + seed_artists + (user_top)
+      single-genre:   genres[0] のみ
+      single-artist:  radio_artist のみ
     """
+    play_mode = settings.get("play_mode", "rotation")
+
+    # single-artist モード: 指定アーティストの曲のみ
+    if play_mode == "single-artist":
+        name = (settings.get("radio_artist") or "").strip()
+        if not name:
+            return []
+        try:
+            return await spotify.get_artist_top_tracks(name)
+        except spotify.SpotifyError:
+            return []
+
+    # single-genre モード: 先頭ジャンルだけ
+    if play_mode == "single-genre":
+        genres = settings.get("genres", []) or []
+        if not genres:
+            return []
+        try:
+            return await spotify.search_by_genre(genres[0])
+        except spotify.SpotifyError:
+            return []
+
+    # rotation (デフォルト)
     active_genre = _active_genre(settings)
     seeds = settings.get("seed_artists", []) or []
     use_top = bool(settings.get("use_user_top", False))
@@ -299,13 +322,16 @@ async def _pick_from_charts(settings: dict, active_mail: dict | None) -> dict | 
     ex_keywords = [k.lower() for k in exclude.get("keywords", [])]
     allowed_languages = settings.get("allowed_languages") or []
     genres_list = settings.get("genres", []) or []
+    play_mode = settings.get("play_mode", "rotation")
+    # single-artist モードでは「連続同アーティスト2曲制限」を無効化 (どうせ全部同じ)
+    enforce_artist_dedup = play_mode != "single-artist"
 
     def ok(t: dict) -> bool:
         if t["id"] in locked_ids:
             return False
         if t["artist"].lower() in ex_artists:
             return False
-        if recent_artists.count(t["artist"]) >= 2:
+        if enforce_artist_dedup and recent_artists.count(t["artist"]) >= 2:
             return False
         hay = (t["artist"] + " " + t["title"]).lower()
         if any(k in hay for k in ex_keywords if k):
