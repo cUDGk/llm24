@@ -230,6 +230,79 @@ def _advance_genre_rotation(settings: dict) -> None:
         _state.current_genre_idx += 1
 
 
+async def _resolve_radio_seed(seed: str) -> str | None:
+    """種文字列からアーティスト名を取り出す。
+    - アーティスト名そのまま → そのまま返す
+    - Spotify track URL → oEmbed で曲名取得 → search でアーティスト名解決
+    """
+    if not seed:
+        return None
+    if "spotify:" in seed or "open.spotify" in seed:
+        track_id = spotify.parse_track_id(seed)
+        if not track_id:
+            return None
+        meta = await spotify.get_track_oembed(track_id)
+        title = (meta.get("title") if meta else "") or ""
+        if not title:
+            return None
+        try:
+            results = await spotify.search_by_track_query(title, limit=10)
+        except spotify.SpotifyError:
+            return None
+        for r in results:
+            if r["id"] == track_id:
+                # 主アーティスト (カンマ前) を取り出す
+                return r["artist"].split(",")[0].strip()
+        return None
+    return seed.strip()
+
+
+async def _build_radio_pool(settings: dict) -> list[dict]:
+    """種アーティストのジャンルメタ + top tracks で類似曲プールを作る。
+    例: radio_artist='YOASOBI' → genres=['j-pop','j-rock'] → search by genre + YOASOBI top tracks 合算
+    """
+    seed = (settings.get("radio_artist") or "").strip()
+    if not seed:
+        return []
+    artist_name = await _resolve_radio_seed(seed)
+    if not artist_name:
+        return []
+    # 並列取得: ジャンルメタ取得 → ジャンル検索、 同時に artist top tracks
+    try:
+        genres = await spotify.get_artist_genres(artist_name)
+    except spotify.SpotifyError:
+        genres = []
+
+    async def _safe_genre(g: str) -> list[dict]:
+        try:
+            return await spotify.search_by_genre(g)
+        except spotify.SpotifyError:
+            return []
+
+    async def _safe_artist(name: str) -> list[dict]:
+        try:
+            return await spotify.get_artist_top_tracks(name)
+        except spotify.SpotifyError:
+            return []
+
+    tasks = [_safe_artist(artist_name)]
+    for g in genres[:3]:
+        tasks.append(_safe_genre(g))
+    results = await asyncio.gather(*tasks)
+
+    pool: list[dict] = []
+    seen: set[str] = set()
+    for tracks in results:
+        for t in tracks:
+            if t["id"] in seen:
+                continue
+            seen.add(t["id"])
+            pool.append(t)
+    random.shuffle(pool)
+    print(f"[scheduler] radio pool seed={artist_name} genres={genres[:3]} size={len(pool)}", flush=True)
+    return pool
+
+
 async def _build_candidate_pool(settings: dict) -> list[dict]:
     """候補プール構築。並列取得 (キャッシュあり)。
     play_mode に応じてソースを変える:
@@ -258,6 +331,10 @@ async def _build_candidate_pool(settings: dict) -> list[dict]:
             return await spotify.search_by_genre(genres[0])
         except spotify.SpotifyError:
             return []
+
+    # spotify-radio モード: 種からジャンル抽出 → 類似曲プール構築
+    if play_mode == "spotify-radio":
+        return await _build_radio_pool(settings)
 
     # rotation (デフォルト)
     active_genre = _active_genre(settings)

@@ -114,12 +114,13 @@
             <select id="s-play-mode">
               <option value="rotation" selected>ジャンルローテーション</option>
               <option value="single-genre">単一ジャンル固定</option>
-              <option value="single-artist">アーティストラジオ (指定アーティストの曲のみ)</option>
+              <option value="single-artist">アーティスト固定 (同じアーティストの曲のみ)</option>
+              <option value="spotify-radio">スポラジ風 (種アーティストの系統で続く)</option>
             </select>
           </label>
           <label class="field">
-            <span data-i18n="radio_artist">アーティストラジオの対象 (single-artist のみ)</span>
-            <input id="s-radio-artist" type="text" placeholder="例: YOASOBI">
+            <span data-i18n="radio_artist">種アーティスト (single-artist / spotify-radio 用、 曲URLでも可)</span>
+            <input id="s-radio-artist" type="text" placeholder="例: YOASOBI / https://open.spotify.com/track/...">
           </label>
           <label class="field">
             <span data-i18n="chat_freq">雑談頻度</span>

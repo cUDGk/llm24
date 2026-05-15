@@ -268,6 +268,29 @@ def _normalize_track(tr: dict) -> dict:
     }
 
 
+async def get_artist_genres(artist_name: str, market: str = "JP") -> list[str]:
+    """search?type=artist で artist obj の genres メタを取得。
+    /artists/{id} は 2024-11 以降 403 なので search 経由で。"""
+    from . import db
+    cache_key = f"{market}:{artist_name}"
+    cached = await db.cache_get("artist_genres", cache_key)
+    if cached is not None:
+        return cached
+    token = await get_access_token()
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        r = await client.get(
+            "https://api.spotify.com/v1/search",
+            params={"q": f'artist:"{artist_name}"', "type": "artist", "limit": 1, "market": market},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        if r.status_code != 200:
+            return []
+        items = r.json().get("artists", {}).get("items", [])
+        genres = items[0].get("genres", []) if items else []
+    await db.cache_put("artist_genres", cache_key, genres, ttl_seconds=24 * 3600)
+    return genres
+
+
 async def get_artist_top_tracks(artist_name: str, market: str = "JP") -> list[dict]:
     """アーティスト名で track 検索 (人気順)。1時間キャッシュ。
     Spotify は 2024-11 以降、/artists/{id}/top-tracks を新規アプリで 403 にしたので、
